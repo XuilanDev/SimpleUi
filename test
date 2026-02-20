@@ -1,352 +1,109 @@
--- SimpleUILib (start from Section)
--- returns: UI table with :CreateSection()
+--// SimpleUILib (v0.1)
+--// Сейчас: окна (125x25), максимум 4, создаются правее прошлого + dragging (мышь/палец).
+--// Остальные элементы (Section/Button/...) пока заглушки, чтобы твой шаблон не крашился.
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 
-local UI = {}
-UI.__index = UI
+local SimpleUILib = {}
 
--- =========================
--- CONFIG (можешь менять)
--- =========================
-UI.Config = {
-	Columns = 4,
+--// Настройки окна (по твоему ТЗ)
+SimpleUILib.MaxWindows = 4
 
-	SectionWidth = 125,
-	HeaderHeight = 25,
-	BodyHeight = 120,
+SimpleUILib.WindowWidth = 125
+SimpleUILib.WindowHeaderHeight = 25
+SimpleUILib.WindowGap = 8
 
-	GapX = 10,
-	GapY = 10,
+SimpleUILib.StartX = 20
+SimpleUILib.StartY = 20
 
-	Padding = 3,      -- отступ слева у текста и справа у стрелки (одинаковый, меньше чем было)
-	ArrowSize = 18,
+SimpleUILib.WindowColor = Color3.fromRGB(125, 125, 125) -- серый 125
+SimpleUILib.TextColor = Color3.fromRGB(255, 255, 255)   -- белый
 
-	HeaderColor = Color3.fromRGB(125, 125, 125),
-	BodyColor   = Color3.fromRGB(168, 168, 168),
-	TextColor   = Color3.fromRGB(255, 255, 255),
-}
+--// Внутреннее состояние
+SimpleUILib._windowCount = 0
+SimpleUILib._windows = {}
 
-UI._inited = false
-UI._sections = {}
-UI._screenGui = nil
-UI._holder = nil
-UI._camConn = nil
-UI._camChangedConn = nil
-
-local function getPlayerGui()
-	return Players.LocalPlayer:WaitForChild("PlayerGui")
+local function getLocalPlayer()
+	local lp = Players.LocalPlayer
+	if lp then return lp end
+	repeat task.wait() lp = Players.LocalPlayer until lp
+	return lp
 end
 
-local function getViewport()
-	local cam = workspace.CurrentCamera
-	if cam then return cam.ViewportSize end
-	return Vector2.new(1920, 1080)
+local function safeDestroy(inst)
+	if inst and inst.Destroy then
+		pcall(function() inst:Destroy() end)
+	end
 end
 
-function UI:_init()
-	if self._inited then return end
-	self._inited = true
+local function createScreenGui()
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "SimpleUILib"
+	gui.ResetOnSpawn = false
+	gui.IgnoreGuiInset = true
+	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
-	-- reuse if already exists
-	local pg = getPlayerGui()
-	local existing = pg:FindFirstChild("SimpleUILib")
-	if existing and existing:IsA("ScreenGui") then
-		self._screenGui = existing
-		self._holder = existing:FindFirstChild("Holder")
-		if not self._holder then
-			self._holder = Instance.new("Frame")
-			self._holder.Name = "Holder"
-			self._holder.BackgroundTransparency = 1
-			self._holder.Size = UDim2.fromScale(1, 1)
-			self._holder.Parent = self._screenGui
+	local candidates = {}
+
+	-- 1) executor/hub UI контейнер (если есть)
+	if typeof(gethui) == "function" then
+		local ok, res = pcall(gethui)
+		if ok and typeof(res) == "Instance" then
+			table.insert(candidates, res)
 		end
-	else
-		local sg = Instance.new("ScreenGui")
-		sg.Name = "SimpleUILib"
-		sg.ResetOnSpawn = false
-		sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-		sg.Parent = pg
-		self._screenGui = sg
-
-		local holder = Instance.new("Frame")
-		holder.Name = "Holder"
-		holder.BackgroundTransparency = 1
-		holder.Size = UDim2.fromScale(1, 1)
-		holder.Parent = sg
-		self._holder = holder
 	end
 
-	local function bindCamera()
-		if self._camConn then
-			self._camConn:Disconnect()
-			self._camConn = nil
+	-- 2) CoreGui (может быть запрещён в обычных LocalScript — поэтому через pcall)
+	table.insert(candidates, game:GetService("CoreGui"))
+
+	-- 3) PlayerGui
+	local lp = getLocalPlayer()
+	local pg = lp:WaitForChild("PlayerGui")
+	table.insert(candidates, pg)
+
+	for _, parent in ipairs(candidates) do
+		local existing = parent:FindFirstChild(gui.Name)
+		if existing then
+			safeDestroy(existing)
 		end
 
-		local cam = workspace.CurrentCamera
-		if not cam then return end
-
-		self._camConn = cam:GetPropertyChangedSignal("ViewportSize"):Connect(function()
-			self:_relayout()
+		local ok = pcall(function()
+			gui.Parent = parent
 		end)
-	end
 
-	if not self._camChangedConn then
-		self._camChangedConn = workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
-			bindCamera()
-			self:_relayout()
-		end)
-	end
-
-	bindCamera()
-end
-
-function UI:SetConfig(cfg)
-	self:_init()
-	for k, v in pairs(cfg) do
-		self.Config[k] = v
-	end
-
-	-- применим на существующие секции
-	for _, s in ipairs(self._sections) do
-		if not s._manual then
-			s:_applySizesFromConfig()
+		if ok then
+			return gui
 		end
 	end
 
-	self:_relayout()
+	gui.Parent = pg
+	return gui
 end
 
--- =========================
--- Layout: 4 в ряд, потом вниз
--- Не двигаем секции, которые были вручную перетащены (manual)
--- =========================
-function UI:_relayout()
-	self:_init()
+--// База GUI
+SimpleUILib._gui = createScreenGui()
 
-	local cfg = self.Config
-	local viewport = getViewport()
+SimpleUILib._root = Instance.new("Frame")
+SimpleUILib._root.Name = "Root"
+SimpleUILib._root.BackgroundTransparency = 1
+SimpleUILib._root.Size = UDim2.fromScale(1, 1)
+SimpleUILib._root.Position = UDim2.fromScale(0, 0)
+SimpleUILib._root.Parent = SimpleUILib._gui
 
-	-- центрируем ряд из 4 секций по X
-	local rowWidth = cfg.Columns * cfg.SectionWidth + (cfg.Columns - 1) * cfg.GapX
-	local startX = math.floor((viewport.X - rowWidth) / 2)
+--// Drag helper (мышь + touch)
+local function enableDrag(dragHandle, dragTarget)
+	dragHandle.Active = true
 
-	-- первая строка по Y: чтобы хедер был по центру экрана
-	-- (и при открытии секция растёт вниз, хедер не прыгает)
-	local startY = math.floor(viewport.Y / 2 - cfg.HeaderHeight / 2)
-
-	-- соберём авто-секции (те, что не manual)
-	local autos = {}
-	for _, s in ipairs(self._sections) do
-		if not s._manual then
-			table.insert(autos, s)
-		end
-	end
-
-	-- считаем высоты строк
-	local rowHeights = {}
-	for i, s in ipairs(autos) do
-		local row = math.floor((i - 1) / cfg.Columns) + 1
-		local h = s:_getFullHeight()
-		rowHeights[row] = math.max(rowHeights[row] or 0, h)
-	end
-
-	-- раскладываем
-	local function rowY(row)
-		local y = startY
-		for r = 1, row - 1 do
-			y = y + (rowHeights[r] or 0) + cfg.GapY
-		end
-		return y
-	end
-
-	for i, s in ipairs(autos) do
-		local idx = i - 1
-		local row = math.floor(idx / cfg.Columns) + 1
-		local col = (idx % cfg.Columns) + 1
-
-		local x = startX + (col - 1) * (cfg.SectionWidth + cfg.GapX)
-		local y = rowY(row)
-
-		s.Frame.Position = UDim2.fromOffset(x, y)
-	end
-end
-
--- =========================
--- Section object
--- =========================
-local Section = {}
-Section.__index = Section
-
-function Section:_getFullHeight()
-	local cfg = UI.Config
-	return cfg.HeaderHeight + (self.Open and self.BodyHeight or 0)
-end
-
-function Section:_applySizesFromConfig()
-	local cfg = UI.Config
-	self.Width = cfg.SectionWidth
-	self.HeaderHeight = cfg.HeaderHeight
-	self.BodyHeight = self.BodyHeight or cfg.BodyHeight -- если уже задано, не ломаем
-
-	self.Header.Size = UDim2.new(0, self.Width, 0, self.HeaderHeight)
-	self.Body.Position = UDim2.new(0, 0, 0, self.HeaderHeight)
-	self.Body.Size = UDim2.new(0, self.Width, 0, self.BodyHeight)
-
-	self.Frame.Size = UDim2.new(0, self.Width, 0, self:_getFullHeight())
-end
-
-function Section:SetName(name)
-	self.Title.Text = tostring(name or "")
-end
-
-function Section:SetOpen(open)
-	self.Open = open and true or false
-	self.Body.Visible = self.Open
-	self.Arrow.Rotation = self.Open and 0 or 180
-
-	self.Frame.Size = UDim2.new(0, self.Width, 0, self:_getFullHeight())
-	UI:_relayout()
-end
-
-function Section:Toggle()
-	self:SetOpen(not self.Open)
-end
-
--- =========================
--- CreateSection (главная точка входа)
--- =========================
-function UI:CreateSection(opts)
-	self:_init()
-
-	opts = opts or {}
-	local cfg = self.Config
-
-	local name = opts.Name or "Section"
-	local bodyH = opts.BodyHeight or cfg.BodyHeight
-
-	-- Root frame for section (transparent)
-	local frame = Instance.new("Frame")
-	frame.Name = "Section"
-	frame.BackgroundTransparency = 1
-	frame.BorderSizePixel = 0
-	frame.Parent = self._holder
-
-	-- Header
-	local header = Instance.new("Frame")
-	header.Name = "Header"
-	header.BackgroundColor3 = cfg.HeaderColor
-	header.BorderSizePixel = 0
-	header.Parent = frame
-
-	-- Drag area (прозрачная кнопка на весь хедер) — самый надёжный “банальный” драг
-	local dragArea = Instance.new("TextButton")
-	dragArea.Name = "DragArea"
-	dragArea.BackgroundTransparency = 1
-	dragArea.BorderSizePixel = 0
-	dragArea.Text = ""
-	dragArea.AutoButtonColor = false
-	dragArea.Size = UDim2.fromScale(1, 1)
-	dragArea.Parent = header
-
-	-- Arrow (справа)
-	local arrow = Instance.new("TextButton")
-	arrow.Name = "Arrow"
-	arrow.BackgroundTransparency = 1
-	arrow.BorderSizePixel = 0
-	arrow.AutoButtonColor = false
-	arrow.Text = "^"
-	arrow.Font = Enum.Font.GothamBold
-	arrow.TextSize = 12
-	arrow.TextColor3 = cfg.TextColor
-	arrow.Size = UDim2.fromOffset(cfg.ArrowSize, cfg.ArrowSize)
-	arrow.AnchorPoint = Vector2.new(1, 0.5)
-	arrow.Position = UDim2.new(1, -cfg.Padding, 0.5, 0)
-	arrow.ZIndex = 3
-	arrow.Parent = header
-
-	-- Title (слева)
-	local title = Instance.new("TextLabel")
-	title.Name = "Title"
-	title.BackgroundTransparency = 1
-	title.BorderSizePixel = 0
-	title.Text = tostring(name)
-	title.Font = Enum.Font.GothamSemibold
-	title.TextSize = 10
-	title.TextColor3 = cfg.TextColor
-	title.TextXAlignment = Enum.TextXAlignment.Left
-	title.TextYAlignment = Enum.TextYAlignment.Center
-	title.Position = UDim2.new(0, cfg.Padding, 0, 0)
-	title.ZIndex = 2
-	title.Parent = header
-
-	-- Body (под хедером)
-	local body = Instance.new("Frame")
-	body.Name = "Body"
-	body.BackgroundColor3 = cfg.BodyColor
-	body.BorderSizePixel = 0
-	body.Visible = false
-	body.Parent = frame
-
-	-- Контейнер под будущие кнопки
-	local content = Instance.new("Frame")
-	content.Name = "Content"
-	content.BackgroundTransparency = 1
-	content.BorderSizePixel = 0
-	content.Size = UDim2.fromScale(1, 1)
-	content.Parent = body
-
-	local padding = Instance.new("UIPadding")
-	padding.PaddingLeft = UDim.new(0, cfg.Padding)
-	padding.PaddingRight = UDim.new(0, cfg.Padding)
-	padding.PaddingTop = UDim.new(0, cfg.Padding)
-	padding.PaddingBottom = UDim.new(0, cfg.Padding)
-	padding.Parent = content
-
-	local list = Instance.new("UIListLayout")
-	list.SortOrder = Enum.SortOrder.LayoutOrder
-	list.Padding = UDim.new(0, 4)
-	list.Parent = content
-
-	-- Собираем объект секции
-	local section = setmetatable({
-		Frame = frame,
-		Header = header,
-		Body = body,
-		Title = title,
-		Arrow = arrow,
-		Content = content,
-		List = list,
-
-		Width = cfg.SectionWidth,
-		HeaderHeight = cfg.HeaderHeight,
-		BodyHeight = bodyH,
-
-		Open = false,
-		_manual = false, -- станет true если секцию потащили (тогда авто-раскладка её не трогает)
-	}, Section)
-
-	-- Применяем размеры + корректируем размеры Title
-	section:_applySizesFromConfig()
-	title.Size = UDim2.new(1, -(cfg.Padding * 2 + cfg.ArrowSize), 1, 0)
-
-	-- Клик по стрелке
-	arrow.MouseButton1Click:Connect(function()
-		section:Toggle()
-	end)
-
-	-- =========================
-	-- ДРАГГИНГ (нормальный)
-	-- =========================
 	local dragging = false
-	local dragInput = nil
 	local dragStart = nil
 	local startPos = nil
+	local dragInput = nil
 
 	local function update(input)
+		if not dragStart or not startPos then return end
 		local delta = input.Position - dragStart
-		section.Frame.Position = UDim2.new(
+		dragTarget.Position = UDim2.new(
 			startPos.X.Scale,
 			startPos.X.Offset + delta.X,
 			startPos.Y.Scale,
@@ -354,40 +111,158 @@ function UI:CreateSection(opts)
 		)
 	end
 
-	dragArea.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1
-			or input.UserInputType == Enum.UserInputType.Touch then
-
+	dragHandle.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
-			section._manual = true -- теперь секция “ручная”, авто-раскладка её не перетирает
 			dragStart = input.Position
-			startPos = section.Frame.Position
+			startPos = dragTarget.Position
+			dragInput = input
 
 			input.Changed:Connect(function()
 				if input.UserInputState == Enum.UserInputState.End then
 					dragging = false
+					dragInput = nil
 				end
 			end)
 		end
 	end)
 
-	dragArea.InputChanged:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseMovement
-			or input.UserInputType == Enum.UserInputType.Touch then
+	dragHandle.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
 			dragInput = input
 		end
 	end)
 
 	UserInputService.InputChanged:Connect(function(input)
-		if input == dragInput and dragging then
+		if dragging and dragInput and input == dragInput then
 			update(input)
 		end
 	end)
+end
 
-	table.insert(self._sections, section)
-	self:_relayout()
+--// Window class
+local Window = {}
+Window.__index = Window
 
+function Window:SetTitle(text)
+	text = tostring(text or "")
+	self.Title = text
+	if self.TitleLabel then
+		self.TitleLabel.Text = text
+	end
+end
+
+function Window:Destroy()
+	safeDestroy(self.Frame)
+end
+
+--// Section class (заглушки под твой будущий API)
+local Section = {}
+Section.__index = Section
+SimpleUILib._SectionClass = Section
+
+local function notImplemented(name)
+	warn(("SimpleUILib: %s ещё не реализован(о)."):format(name))
+end
+
+function Window:AddSection(opts)
+	opts = opts or {}
+	local section = setmetatable({
+		_window = self,
+		Name = tostring(opts.Name or "Section"),
+	}, Section)
 	return section
 end
 
-return setmetatable(UI, UI)
+function Section:AddButton(_) notImplemented("AddButton"); end
+function Section:AddKeyBind(_) notImplemented("AddKeyBind"); end
+function Section:AddToggle(_) notImplemented("AddToggle"); end
+function Section:AddSlider(_) notImplemented("AddSlider"); end
+function Section:AddTextbox(_) notImplemented("AddTextbox"); end
+function Section:AddDropDown(_) notImplemented("AddDropDown"); end
+function Section:AddLabel(_) notImplemented("AddLabel"); end
+function Section:AddHeadText(_) notImplemented("AddHeadText"); end
+function Section:AddNotification(_) notImplemented("AddNotification"); end
+
+--// Public: MakeWindow
+function SimpleUILib:MakeWindow(opts)
+	opts = opts or {}
+
+	if self._windowCount >= self.MaxWindows then
+		warn(("SimpleUILib: можно создать максимум %d окна(ок)."):format(self.MaxWindows))
+		return nil
+	end
+
+	self._windowCount = self._windowCount + 1
+	local idx = self._windowCount
+
+	local title = tostring(opts.Title or opts.Name or ("Window " .. idx))
+
+	-- Окно по ТЗ: прямоугольник 125x25, серый, острые углы (UICorner не ставим)
+	local frame = Instance.new("Frame")
+	frame.Name = "Window_" .. idx
+	frame.BackgroundColor3 = self.WindowColor
+	frame.BorderSizePixel = 0
+	frame.Size = UDim2.fromOffset(self.WindowWidth, self.WindowHeaderHeight)
+
+	-- Каждое следующее правее прошлого
+	frame.Position = UDim2.fromOffset(
+		self.StartX + (idx - 1) * (self.WindowWidth + self.WindowGap),
+		self.StartY
+	)
+
+	frame.Parent = self._root
+	frame.Active = true
+
+	-- Заголовок слева
+	local titleLabel = Instance.new("TextLabel")
+	titleLabel.Name = "Title"
+	titleLabel.BackgroundTransparency = 1
+	titleLabel.Size = UDim2.new(1, -25, 1, 0)
+	titleLabel.Position = UDim2.fromOffset(6, 0)
+	titleLabel.Font = Enum.Font.Gotham
+	titleLabel.TextSize = 14
+	titleLabel.TextColor3 = self.TextColor
+	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+	titleLabel.TextYAlignment = Enum.TextYAlignment.Center
+	titleLabel.Text = title
+	titleLabel.Parent = frame
+	titleLabel.Active = true
+
+	-- Стрелочка справа "^" (открыть/закрыть позже)
+	local arrowButton = Instance.new("TextButton")
+	arrowButton.Name = "Arrow"
+	arrowButton.BackgroundTransparency = 1
+	arrowButton.Size = UDim2.fromOffset(25, self.WindowHeaderHeight)
+	arrowButton.Position = UDim2.new(1, -25, 0, 0)
+	arrowButton.Font = Enum.Font.GothamBold
+	arrowButton.TextSize = 16
+	arrowButton.TextColor3 = self.TextColor
+	arrowButton.Text = "^"
+	arrowButton.Parent = frame
+
+	arrowButton.Activated:Connect(function()
+		-- позже: открыть/закрыть контент окна
+	end)
+
+	-- Dragging: тащить можно за фон и за текст заголовка
+	enableDrag(frame, frame)
+	enableDrag(titleLabel, frame)
+
+	local windowObj = setmetatable({
+		Index = idx,
+		Title = title,
+		Frame = frame,
+		TitleLabel = titleLabel,
+		ArrowButton = arrowButton,
+	}, Window)
+
+	table.insert(self._windows, windowObj)
+	return windowObj
+end
+
+function SimpleUILib:Destroy()
+	safeDestroy(self._gui)
+end
+
+return SimpleUILib
