@@ -1,1 +1,279 @@
+--!strict
+-- SimpleUILib.lua
 
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+
+local SimpleUILib = {}
+SimpleUILib.__index = SimpleUILib
+
+-- утилиты
+local function create(className: string, props: {[string]: any}?)
+	local inst = Instance.new(className)
+	if props then
+		for k, v in pairs(props) do
+			(inst :: any)[k] = v
+		end
+	end
+	return inst
+end
+
+local function getLocalPlayerGui()
+	local lp = Players.LocalPlayer
+	return lp:WaitForChild("PlayerGui")
+end
+
+-- =========================
+-- Window (менеджер секций)
+-- =========================
+
+local Window = {}
+Window.__index = Window
+
+export type Window = {
+	ScreenGui: ScreenGui,
+	Root: Frame,
+	Grid: UIGridLayout,
+	Sections: {any},
+
+	AddSection: (self: any, opts: {Name: string}) -> any,
+	Destroy: (self: any) -> (),
+}
+
+-- =========================
+-- Section (карточка)
+-- =========================
+
+local Section = {}
+Section.__index = Section
+
+export type Section = {
+	Frame: Frame,
+	Header: Frame,
+	Arrow: TextButton,
+	Title: TextLabel,
+	Content: Frame,
+	List: UIListLayout,
+	IsOpen: boolean,
+
+	SetName: (self: any, name: string) -> (),
+	SetOpen: (self: any, open: boolean) -> (),
+	ToggleOpen: (self: any) -> (),
+}
+
+-- =========================
+-- API: MakeWindow
+-- =========================
+function SimpleUILib:MakeWindow(opts: {Title: string})
+	opts = opts or { Title = "SimpleUILib" }
+
+	local sg = create("ScreenGui", {
+		Name = "SimpleUILib",
+		ResetOnSpawn = false,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		IgnoreGuiInset = false,
+	})
+
+	sg.Parent = getLocalPlayerGui()
+
+	local root = create("Frame", {
+		Name = "Root",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		Position = UDim2.fromScale(0, 0),
+	})
+	root.Parent = sg
+
+	-- контейнер, в котором лежит сетка секций
+	local holder = create("Frame", {
+		Name = "Holder",
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 18),
+		Size = UDim2.new(1, -36, 1, -36),
+	})
+	holder.Parent = root
+
+	local grid = create("UIGridLayout", {
+		Name = "Grid",
+		FillDirection = Enum.FillDirection.Horizontal,
+		FillDirectionMaxCells = 4, -- 4 в ряд
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		CellPadding = UDim2.fromOffset(10, 10),
+		-- CellSize выставим ниже через пересчёт (чтобы под разные экраны)
+	})
+	grid.Parent = holder
+
+	-- пересчёт CellSize: 4 в ряд, учитывая padding и ширину holder
+	local function recalcCellSize()
+		local paddingX = 10
+		local totalPaddingX = paddingX * 3 -- между 4 карточками три промежутка
+		local availableX = holder.AbsoluteSize.X - totalPaddingX
+		local cellW = math.floor(availableX / 4)
+
+		-- высота карточки (в закрытом виде) — фикс, в открытом будет расти за счёт контента
+		-- Но UIGridLayout требует CellSize фиксированный: делаем достаточный минимум,
+		-- а внутри карточки контент будет скроллиться (или ты потом сделаешь авто-высоту).
+		local cellH = 220
+
+		grid.CellSize = UDim2.fromOffset(cellW, cellH)
+	end
+
+	holder:GetPropertyChangedSignal("AbsoluteSize"):Connect(recalcCellSize)
+	task.defer(recalcCellSize)
+
+	-- можно добавить заголовок окна (не “окно”, а просто title сверху), если хочешь:
+	local titleLabel = create("TextLabel", {
+		Name = "LibraryTitle",
+		BackgroundTransparency = 1,
+		Text = opts.Title,
+		Font = Enum.Font.GothamBold,
+		TextSize = 18,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		Position = UDim2.new(0, 18, 0, 0),
+		Size = UDim2.new(1, -36, 0, 18),
+	})
+	titleLabel.Parent = root
+
+	local self = setmetatable({
+		ScreenGui = sg,
+		Root = holder,
+		Grid = grid,
+		Sections = {},
+	}, Window)
+
+	return self
+end
+
+function Window:Destroy()
+	if self.ScreenGui then
+		self.ScreenGui:Destroy()
+	end
+end
+
+-- =========================
+-- Section creation
+-- =========================
+function Window:AddSection(opts: {Name: string})
+	opts = opts or { Name = "Section" }
+
+	local card = create("Frame", {
+		Name = "SectionCard",
+		BackgroundColor3 = Color3.fromRGB(25, 25, 25),
+		BorderSizePixel = 0,
+		LayoutOrder = #self.Sections + 1,
+	})
+	card.Parent = self.Root
+
+	create("UICorner", { CornerRadius = UDim.new(0, 8) }).Parent = card
+	create("UIStroke", {
+		Thickness = 1,
+		Color = Color3.fromRGB(45, 45, 45),
+		Transparency = 0,
+	}).Parent = card
+
+	-- Header
+	local header = create("Frame", {
+		Name = "Header",
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, -12, 0, 34),
+		Position = UDim2.fromOffset(6, 6),
+	})
+	header.Parent = card
+
+	-- стрелочка ^ (TextButton, чтобы кликать)
+	local arrow = create("TextButton", {
+		Name = "Arrow",
+		BackgroundTransparency = 1,
+		Text = "^",
+		Font = Enum.Font.GothamBold,
+		TextSize = 18,
+		TextColor3 = Color3.fromRGB(235, 235, 235),
+		Size = UDim2.fromOffset(24, 24),
+		Position = UDim2.new(1, -24, 0.5, -12),
+		AutoButtonColor = false,
+	})
+	arrow.Parent = header
+
+	-- название секции слева от стрелки
+	local title = create("TextLabel", {
+		Name = "Name",
+		BackgroundTransparency = 1,
+		Text = opts.Name,
+		Font = Enum.Font.GothamSemibold,
+		TextSize = 14,
+		TextColor3 = Color3.fromRGB(235, 235, 235),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		Position = UDim2.fromOffset(0, 0),
+		Size = UDim2.new(1, -30, 1, 0),
+	})
+	title.Parent = header
+
+	-- Content wrapper (ниже header)
+	local content = create("Frame", {
+		Name = "Content",
+		BackgroundTransparency = 1,
+		Position = UDim2.new(0, 6, 0, 44),
+		Size = UDim2.new(1, -12, 1, -50),
+		ClipsDescendants = true,
+	})
+	content.Parent = card
+
+	-- Список элементов внутри секции
+	local list = create("UIListLayout", {
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 6),
+	})
+	list.Parent = content
+
+	create("UIPadding", {
+		PaddingTop = UDim.new(0, 2),
+		PaddingBottom = UDim.new(0, 2),
+		PaddingLeft = UDim.new(0, 2),
+		PaddingRight = UDim.new(0, 2),
+	}).Parent = content
+
+	local section = setmetatable({
+		Frame = card,
+		Header = header,
+		Arrow = arrow,
+		Title = title,
+		Content = content,
+		List = list,
+		IsOpen = true,
+	}, Section)
+
+	-- логика стрелочки (вверх когда открыто; “вниз” когда закрыто)
+	local function applyArrowState()
+		-- просто вращаем символ ^ (визуально станет "v" при 180)
+		arrow.Rotation = section.IsOpen and 0 or 180
+	end
+
+	function section:SetName(name: string)
+		self.Title.Text = name
+	end
+
+	function section:SetOpen(open: boolean)
+		self.IsOpen = open
+		self.Content.Visible = open
+		applyArrowState()
+	end
+
+	function section:ToggleOpen()
+		self:SetOpen(not self.IsOpen)
+	end
+
+	arrow.MouseButton1Click:Connect(function()
+		section:ToggleOpen()
+	end)
+
+	-- стартовое состояние
+	section:SetOpen(true)
+
+	table.insert(self.Sections, section)
+	return section
+end
+
+return SimpleUILib
