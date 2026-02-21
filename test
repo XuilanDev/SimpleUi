@@ -1,5 +1,7 @@
--- XuilanLib.lua (for loadstring(game:HttpGet(...))())
--- Full file, no junk at end.
+-- XuilanLib.lua (executor-ready)
+-- loadstring(game:HttpGet(URL))()
+-- Full rewrite: themes(15) + ThemeSection + Dropdown scroll (>6) + Button Icon (fingerprint) + keeps same look.
+-- No junk at end.
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -9,9 +11,9 @@ local TweenService = game:GetService("TweenService")
 local XuilanLib = {}
 XuilanLib.__index = XuilanLib
 
--- =========================
+--========================
 -- Helpers
--- =========================
+--========================
 local function ParseFont(fontName)
 	if typeof(fontName) == "EnumItem" then return fontName end
 	if typeof(fontName) == "string" and Enum.Font[fontName] then
@@ -21,16 +23,13 @@ local function ParseFont(fontName)
 end
 
 local function ParseColor(color)
-	if typeof(color) == "Color3" then
-		return color
-	end
+	if typeof(color) == "Color3" then return color end
 
 	if typeof(color) == "table" then
 		return Color3.fromRGB(color[1] or 255, color[2] or 255, color[3] or 255)
 	end
 
 	if typeof(color) == "string" then
-		-- HEX
 		local hex = color:gsub("#", "")
 		if #hex == 6 then
 			local r = tonumber(hex:sub(1, 2), 16)
@@ -41,7 +40,6 @@ local function ParseColor(color)
 			end
 		end
 
-		-- "255,255,255"
 		local r, g, b = string.match(color, "(%d+),%s*(%d+),%s*(%d+)")
 		if r and g and b then
 			return Color3.fromRGB(tonumber(r), tonumber(g), tonumber(b))
@@ -49,6 +47,15 @@ local function ParseColor(color)
 	end
 
 	return Color3.fromRGB(255, 255, 255)
+end
+
+local function safeTextSize(v, fallback)
+	local n = tonumber(v)
+	if not n then return fallback end
+	n = math.floor(n + 0.5)
+	if n < 6 then n = 6 end
+	if n > 44 then n = 44 end
+	return n
 end
 
 local function brighten(c, add)
@@ -59,34 +66,38 @@ local function brighten(c, add)
 	)
 end
 
-local function safeTextSize(v, fallback)
-	local n = tonumber(v)
-	if not n then return fallback end
-	n = math.floor(n + 0.5)
-	if n < 6 then n = 6 end
-	if n > 40 then n = 40 end
-	return n
+local function asAsset(v)
+	if not v then return nil end
+	if typeof(v) == "number" then
+		return "rbxassetid://" .. tostring(v)
+	end
+	if typeof(v) == "string" then
+		if v:find("rbxassetid://") then return v end
+		if v:match("^%d+$") then return "rbxassetid://" .. v end
+		return v
+	end
+	return nil
 end
 
--- =========================
+--========================
 -- Themes (15)
--- =========================
+--========================
 local Themes = {
-	{ Name="Default Dark", Main=Color3.fromRGB(18,18,18), Inner=Color3.fromRGB(140,140,140), Row=Color3.fromRGB(160,160,160), PillOff=Color3.fromRGB(150,150,150), Fill=Color3.fromRGB(105,105,105), ValueBox=Color3.fromRGB(120,120,120), Lines=Color3.fromRGB(120,120,120), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(235,235,235), Desc=Color3.fromRGB(200,200,200), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(220,220,220) },
-	{ Name="Midnight", Main=Color3.fromRGB(10,10,16), Inner=Color3.fromRGB(110,110,130), Row=Color3.fromRGB(135,135,155), PillOff=Color3.fromRGB(120,120,140), Fill=Color3.fromRGB(90,90,110), ValueBox=Color3.fromRGB(95,95,115), Lines=Color3.fromRGB(140,140,160), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(245,245,255), Desc=Color3.fromRGB(200,200,210), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(220,220,230) },
-	{ Name="Obsidian", Main=Color3.fromRGB(12,12,12), Inner=Color3.fromRGB(120,120,120), Row=Color3.fromRGB(145,145,145), PillOff=Color3.fromRGB(135,135,135), Fill=Color3.fromRGB(95,95,95), ValueBox=Color3.fromRGB(110,110,110), Lines=Color3.fromRGB(130,130,130), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(240,240,240), Desc=Color3.fromRGB(200,200,200), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(230,230,230) },
-	{ Name="Graphite", Main=Color3.fromRGB(22,22,24), Inner=Color3.fromRGB(150,150,155), Row=Color3.fromRGB(175,175,180), PillOff=Color3.fromRGB(160,160,165), Fill=Color3.fromRGB(120,120,125), ValueBox=Color3.fromRGB(135,135,140), Lines=Color3.fromRGB(140,140,145), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(245,245,245), Desc=Color3.fromRGB(210,210,210), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(230,230,230) },
-	{ Name="Forest", Main=Color3.fromRGB(12,18,14), Inner=Color3.fromRGB(120,145,125), Row=Color3.fromRGB(145,170,150), PillOff=Color3.fromRGB(135,160,140), Fill=Color3.fromRGB(95,115,100), ValueBox=Color3.fromRGB(110,135,115), Lines=Color3.fromRGB(140,160,145), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(245,255,245), Desc=Color3.fromRGB(210,220,210), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(235,245,235) },
-	{ Name="Aqua", Main=Color3.fromRGB(10,16,18), Inner=Color3.fromRGB(120,150,150), Row=Color3.fromRGB(145,175,175), PillOff=Color3.fromRGB(135,165,165), Fill=Color3.fromRGB(95,120,120), ValueBox=Color3.fromRGB(110,135,135), Lines=Color3.fromRGB(140,170,170), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(245,255,255), Desc=Color3.fromRGB(210,220,220), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(235,245,245) },
-	{ Name="Rose", Main=Color3.fromRGB(18,10,12), Inner=Color3.fromRGB(150,120,130), Row=Color3.fromRGB(175,145,155), PillOff=Color3.fromRGB(160,135,145), Fill=Color3.fromRGB(120,95,105), ValueBox=Color3.fromRGB(135,110,120), Lines=Color3.fromRGB(170,140,150), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(255,245,250), Desc=Color3.fromRGB(220,210,215), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(245,235,240) },
-	{ Name="Violet", Main=Color3.fromRGB(16,12,22), Inner=Color3.fromRGB(140,125,165), Row=Color3.fromRGB(165,150,190), PillOff=Color3.fromRGB(150,140,175), Fill=Color3.fromRGB(110,95,135), ValueBox=Color3.fromRGB(125,110,150), Lines=Color3.fromRGB(155,140,180), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(250,245,255), Desc=Color3.fromRGB(215,210,220), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(240,235,245) },
-	{ Name="Crimson", Main=Color3.fromRGB(18,10,10), Inner=Color3.fromRGB(155,120,120), Row=Color3.fromRGB(180,145,145), PillOff=Color3.fromRGB(165,135,135), Fill=Color3.fromRGB(120,95,95), ValueBox=Color3.fromRGB(135,110,110), Lines=Color3.fromRGB(175,140,140), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(255,245,245), Desc=Color3.fromRGB(220,210,210), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(245,235,235) },
-	{ Name="Steel", Main=Color3.fromRGB(14,16,18), Inner=Color3.fromRGB(135,145,155), Row=Color3.fromRGB(160,170,180), PillOff=Color3.fromRGB(150,160,170), Fill=Color3.fromRGB(105,115,125), ValueBox=Color3.fromRGB(120,130,140), Lines=Color3.fromRGB(150,160,170), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(245,250,255), Desc=Color3.fromRGB(210,215,220), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(235,240,245) },
-	{ Name="Sand", Main=Color3.fromRGB(18,16,12), Inner=Color3.fromRGB(150,145,125), Row=Color3.fromRGB(175,170,150), PillOff=Color3.fromRGB(160,155,135), Fill=Color3.fromRGB(120,115,95), ValueBox=Color3.fromRGB(135,130,110), Lines=Color3.fromRGB(170,165,145), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(255,255,245), Desc=Color3.fromRGB(220,220,210), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(245,245,235) },
-	{ Name="Neon Dark", Main=Color3.fromRGB(8,8,10), Inner=Color3.fromRGB(115,115,130), Row=Color3.fromRGB(140,140,155), PillOff=Color3.fromRGB(125,125,140), Fill=Color3.fromRGB(90,90,105), ValueBox=Color3.fromRGB(105,105,120), Lines=Color3.fromRGB(150,150,170), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(255,255,255), Desc=Color3.fromRGB(215,215,225), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(230,230,240) },
-	{ Name="Deep Blue", Main=Color3.fromRGB(10,12,20), Inner=Color3.fromRGB(120,130,160), Row=Color3.fromRGB(145,155,185), PillOff=Color3.fromRGB(135,145,175), Fill=Color3.fromRGB(95,105,135), ValueBox=Color3.fromRGB(110,120,150), Lines=Color3.fromRGB(150,160,190), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(245,250,255), Desc=Color3.fromRGB(210,215,225), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(235,240,245) },
-	{ Name="Olive", Main=Color3.fromRGB(14,16,10), Inner=Color3.fromRGB(140,145,120), Row=Color3.fromRGB(165,170,145), PillOff=Color3.fromRGB(150,155,135), Fill=Color3.fromRGB(105,110,95), ValueBox=Color3.fromRGB(120,125,110), Lines=Color3.fromRGB(160,165,145), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(250,255,245), Desc=Color3.fromRGB(215,220,210), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(240,245,235) },
-	{ Name="Warm Grey", Main=Color3.fromRGB(18,16,16), Inner=Color3.fromRGB(145,140,140), Row=Color3.fromRGB(170,165,165), PillOff=Color3.fromRGB(155,150,150), Fill=Color3.fromRGB(115,110,110), ValueBox=Color3.fromRGB(130,125,125), Lines=Color3.fromRGB(160,155,155), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(250,250,250), Desc=Color3.fromRGB(215,215,215), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(240,240,240) },
+	{ Name="Default Dark", Main=Color3.fromRGB(18,18,18), Inner=Color3.fromRGB(120,120,120), Row=Color3.fromRGB(160,160,160), ValueBox=Color3.fromRGB(120,120,120), PillOff=Color3.fromRGB(150,150,150), Fill=Color3.fromRGB(105,105,105), Lines=Color3.fromRGB(120,120,120), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(235,235,235), Desc=Color3.fromRGB(200,200,200), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(220,220,220) },
+	{ Name="Midnight",     Main=Color3.fromRGB(10,10,16), Inner=Color3.fromRGB(105,105,130), Row=Color3.fromRGB(140,140,165), ValueBox=Color3.fromRGB(105,105,125), PillOff=Color3.fromRGB(125,125,145), Fill=Color3.fromRGB(90,90,110), Lines=Color3.fromRGB(140,140,165), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(245,245,255), Desc=Color3.fromRGB(205,205,220), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(230,230,240) },
+	{ Name="Obsidian",     Main=Color3.fromRGB(12,12,12), Inner=Color3.fromRGB(110,110,110), Row=Color3.fromRGB(145,145,145), ValueBox=Color3.fromRGB(110,110,110), PillOff=Color3.fromRGB(135,135,135), Fill=Color3.fromRGB(95,95,95), Lines=Color3.fromRGB(135,135,135), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(245,245,245), Desc=Color3.fromRGB(210,210,210), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(235,235,235) },
+	{ Name="Graphite",     Main=Color3.fromRGB(22,22,24), Inner=Color3.fromRGB(130,130,140), Row=Color3.fromRGB(170,170,180), ValueBox=Color3.fromRGB(135,135,145), PillOff=Color3.fromRGB(160,160,170), Fill=Color3.fromRGB(120,120,130), Lines=Color3.fromRGB(150,150,160), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(250,250,250), Desc=Color3.fromRGB(215,215,215), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(235,235,235) },
+	{ Name="Forest",       Main=Color3.fromRGB(12,18,14), Inner=Color3.fromRGB(115,135,120), Row=Color3.fromRGB(150,170,155), ValueBox=Color3.fromRGB(120,140,125), PillOff=Color3.fromRGB(135,155,140), Fill=Color3.fromRGB(95,115,100), Lines=Color3.fromRGB(150,170,155), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(245,255,245), Desc=Color3.fromRGB(210,220,210), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(235,245,235) },
+	{ Name="Aqua",         Main=Color3.fromRGB(10,16,18), Inner=Color3.fromRGB(115,140,140), Row=Color3.fromRGB(150,175,175), ValueBox=Color3.fromRGB(120,145,145), PillOff=Color3.fromRGB(135,160,160), Fill=Color3.fromRGB(95,120,120), Lines=Color3.fromRGB(150,175,175), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(245,255,255), Desc=Color3.fromRGB(210,220,220), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(235,245,245) },
+	{ Name="Rose",         Main=Color3.fromRGB(18,10,12), Inner=Color3.fromRGB(140,115,125), Row=Color3.fromRGB(175,150,160), ValueBox=Color3.fromRGB(140,115,125), PillOff=Color3.fromRGB(160,140,150), Fill=Color3.fromRGB(120,95,105), Lines=Color3.fromRGB(175,150,160), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(255,245,250), Desc=Color3.fromRGB(220,210,215), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(245,235,240) },
+	{ Name="Violet",       Main=Color3.fromRGB(16,12,22), Inner=Color3.fromRGB(130,120,160), Row=Color3.fromRGB(165,150,190), ValueBox=Color3.fromRGB(130,120,160), PillOff=Color3.fromRGB(150,140,175), Fill=Color3.fromRGB(110,95,135), Lines=Color3.fromRGB(165,150,190), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(250,245,255), Desc=Color3.fromRGB(215,210,220), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(240,235,245) },
+	{ Name="Crimson",      Main=Color3.fromRGB(18,10,10), Inner=Color3.fromRGB(145,115,115), Row=Color3.fromRGB(180,150,150), ValueBox=Color3.fromRGB(145,115,115), PillOff=Color3.fromRGB(165,140,140), Fill=Color3.fromRGB(120,95,95), Lines=Color3.fromRGB(180,150,150), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(255,245,245), Desc=Color3.fromRGB(220,210,210), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(245,235,235) },
+	{ Name="Steel",        Main=Color3.fromRGB(14,16,18), Inner=Color3.fromRGB(125,135,145), Row=Color3.fromRGB(160,170,180), ValueBox=Color3.fromRGB(125,135,145), PillOff=Color3.fromRGB(150,160,170), Fill=Color3.fromRGB(105,115,125), Lines=Color3.fromRGB(160,170,180), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(245,250,255), Desc=Color3.fromRGB(210,215,220), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(235,240,245) },
+	{ Name="Sand",         Main=Color3.fromRGB(18,16,12), Inner=Color3.fromRGB(145,140,120), Row=Color3.fromRGB(175,170,150), ValueBox=Color3.fromRGB(145,140,120), PillOff=Color3.fromRGB(160,155,135), Fill=Color3.fromRGB(120,115,95), Lines=Color3.fromRGB(175,170,150), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(255,255,245), Desc=Color3.fromRGB(220,220,210), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(245,245,235) },
+	{ Name="Neon Dark",    Main=Color3.fromRGB(8,8,10), Inner=Color3.fromRGB(105,105,120), Row=Color3.fromRGB(140,140,160), ValueBox=Color3.fromRGB(105,105,120), PillOff=Color3.fromRGB(125,125,145), Fill=Color3.fromRGB(90,90,110), Lines=Color3.fromRGB(150,150,170), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(255,255,255), Desc=Color3.fromRGB(215,215,225), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(230,230,240) },
+	{ Name="Deep Blue",    Main=Color3.fromRGB(10,12,20), Inner=Color3.fromRGB(115,125,155), Row=Color3.fromRGB(145,155,185), ValueBox=Color3.fromRGB(115,125,155), PillOff=Color3.fromRGB(135,145,175), Fill=Color3.fromRGB(95,105,135), Lines=Color3.fromRGB(145,155,185), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(245,250,255), Desc=Color3.fromRGB(210,215,225), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(235,240,245) },
+	{ Name="Olive",        Main=Color3.fromRGB(14,16,10), Inner=Color3.fromRGB(130,135,115), Row=Color3.fromRGB(165,170,145), ValueBox=Color3.fromRGB(130,135,115), PillOff=Color3.fromRGB(150,155,135), Fill=Color3.fromRGB(105,110,95), Lines=Color3.fromRGB(165,170,145), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(250,255,245), Desc=Color3.fromRGB(215,220,210), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(240,245,235) },
+	{ Name="Warm Grey",    Main=Color3.fromRGB(18,16,16), Inner=Color3.fromRGB(135,130,130), Row=Color3.fromRGB(170,165,165), ValueBox=Color3.fromRGB(135,130,130), PillOff=Color3.fromRGB(155,150,150), Fill=Color3.fromRGB(115,110,110), Lines=Color3.fromRGB(170,165,165), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(250,250,250), Desc=Color3.fromRGB(215,215,215), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(240,240,240) },
 }
 
 local function getThemeByName(name)
@@ -96,9 +107,9 @@ local function getThemeByName(name)
 	return Themes[1]
 end
 
--- =========================
+--========================
 -- CreateWindow
--- =========================
+--========================
 function XuilanLib:CreateWindow(settings)
 	settings = settings or {}
 
@@ -106,10 +117,11 @@ function XuilanLib:CreateWindow(settings)
 	if not player then return nil end
 	local playerGui = player:WaitForChild("PlayerGui")
 
+	-- destroy old
 	local oldGui = playerGui:FindFirstChild("CustomRectangleGui")
 	if oldGui then oldGui:Destroy() end
 
-	-- ===== SAME LOOK CONSTANTS (as your current GUI) =====
+	-- Look constants (keep same)
 	local MAIN_SIZE = UDim2.new(0, 400, 0, 280)
 	local MAIN_T = 0.12
 	local MAIN_CORNER = 14
@@ -132,23 +144,26 @@ function XuilanLib:CreateWindow(settings)
 	local ICON_MARGIN = 10
 	local ICON_GAP = 10
 
+	-- toggle pill
 	local DOT = 13
 	local PILL_PAD = 2
 	local PILL_W = (DOT * 2) + (PILL_PAD * 2)
 	local PILL_H = DOT + (PILL_PAD * 2)
 
-	local ASSET_PUG = settings.Icon or "rbxassetid://136007050760089"
+	-- assets
+	local ASSET_PUG = asAsset(settings.Icon) or "rbxassetid://136007050760089"
 	local ASSET_CLOSE = "rbxassetid://87923978940368"
 	local ASSET_MINUS = "rbxassetid://92670491990824"
 
-	local windowTitle = settings.Title or "Xuilan Window"
+	-- header text settings
+	local windowTitle = settings.Title or "XuilanLib"
 	local windowDesc = settings.Description or ""
 	local titleFont = ParseFont(settings.TitleFont or "SourceSansBold")
 	local descFont = ParseFont(settings.DescriptionFont or "SourceSansBold")
 	local titleColor = ParseColor(settings.TitleColor or "#ebebeb")
 	local descColor = ParseColor(settings.DescriptionColor or "200,200,200")
 
-	-- Theme
+	-- theme
 	local currentTheme = Themes[1]
 
 	-- ScreenGui
@@ -159,7 +174,7 @@ function XuilanLib:CreateWindow(settings)
 	screenGui.DisplayOrder = 999999
 	screenGui.Parent = playerGui
 
-	-- Main Frame
+	-- main frame
 	local mainFrame = Instance.new("Frame")
 	mainFrame.Name = "MainRectangle"
 	mainFrame.Size = MAIN_SIZE
@@ -174,7 +189,7 @@ function XuilanLib:CreateWindow(settings)
 	mainCorner.CornerRadius = UDim.new(0, MAIN_CORNER)
 	mainCorner.Parent = mainFrame
 
-	-- Inner Frame
+	-- inner frame
 	local innerFrame = Instance.new("Frame")
 	innerFrame.Name = "InnerRectangle"
 	innerFrame.Size = INNER_SIZE
@@ -188,7 +203,7 @@ function XuilanLib:CreateWindow(settings)
 	innerCorner.CornerRadius = UDim.new(0, INNER_CORNER)
 	innerCorner.Parent = innerFrame
 
-	-- Inner mask (prevents overflow at rounded corners)
+	-- inner mask for clipping (fix overflow)
 	local innerMask = Instance.new("Frame")
 	innerMask.Name = "InnerMask"
 	innerMask.BackgroundTransparency = 1
@@ -202,7 +217,7 @@ function XuilanLib:CreateWindow(settings)
 	innerMaskCorner.CornerRadius = UDim.new(0, INNER_CORNER)
 	innerMaskCorner.Parent = innerMask
 
-	-- Top-left image
+	-- top-left image
 	local image = Instance.new("ImageLabel")
 	image.Name = "TopLeftImage"
 	image.BackgroundTransparency = 1
@@ -212,7 +227,7 @@ function XuilanLib:CreateWindow(settings)
 	image.ZIndex = 1002
 	image.Parent = mainFrame
 
-	-- Header text wrap
+	-- header text wrap
 	local textWrap = Instance.new("Frame")
 	textWrap.Name = "TextWrap"
 	textWrap.BackgroundTransparency = 1
@@ -258,7 +273,7 @@ function XuilanLib:CreateWindow(settings)
 	desc.LayoutOrder = 2
 	desc.Parent = textWrap
 
-	-- Close / minus icons
+	-- close/minus
 	local closeBtn = Instance.new("ImageButton")
 	closeBtn.Name = "CloseButton"
 	closeBtn.BackgroundTransparency = 1
@@ -308,7 +323,7 @@ function XuilanLib:CreateWindow(settings)
 		end)
 	end)
 
-	-- Sections panel (left)
+	-- Sections panel
 	local sectionsPanel = Instance.new("ScrollingFrame")
 	sectionsPanel.Name = "SectionsPanel"
 	sectionsPanel.BackgroundTransparency = 1
@@ -327,7 +342,7 @@ function XuilanLib:CreateWindow(settings)
 	sectionsList.Padding = UDim.new(0, 2)
 	sectionsList.Parent = sectionsPanel
 
-	-- Content scroll inside inner mask
+	-- content
 	local contentScroll = Instance.new("ScrollingFrame")
 	contentScroll.Name = "ContentScroll"
 	contentScroll.BackgroundTransparency = 1
@@ -361,7 +376,7 @@ function XuilanLib:CreateWindow(settings)
 	bottomSpacer.LayoutOrder = 999999
 	bottomSpacer.Parent = contentScroll
 
-	-- Dropdown global menu
+	-- dropdown menu global
 	local openDropdownMenu = nil
 	local function closeDropdownMenu()
 		if openDropdownMenu and openDropdownMenu.Parent then
@@ -373,13 +388,11 @@ function XuilanLib:CreateWindow(settings)
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if gameProcessed then return end
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			if openDropdownMenu then
-				closeDropdownMenu()
-			end
+			if openDropdownMenu then closeDropdownMenu() end
 		end
 	end)
 
-	-- Button press fx (only for Button)
+	-- button press fx
 	local function buttonPressFX(content, scaleObj, baseRowColor)
 		local baseColor = baseRowColor
 		local brightColor = brighten(baseRowColor, 70)
@@ -395,7 +408,7 @@ function XuilanLib:CreateWindow(settings)
 		end)
 	end
 
-	-- Row factory
+	-- row factories
 	local function rowBase(parent, height)
 		local row = Instance.new("TextButton")
 		row.AutoButtonColor = false
@@ -408,7 +421,7 @@ function XuilanLib:CreateWindow(settings)
 		return row
 	end
 
-	local function makeRowContent(row, rowColor)
+	local function makeRowContent(row)
 		local content = Instance.new("Frame")
 		content.Name = "Content"
 		content.BorderSizePixel = 0
@@ -426,13 +439,12 @@ function XuilanLib:CreateWindow(settings)
 		scale.Scale = 1
 		scale.Parent = content
 
-		content.BackgroundTransparency = ROW_BG_T
-		content.BackgroundColor3 = rowColor
-
 		return content, scale
 	end
 
-	-- ===== Drag main window =====
+	--========================
+	-- Drag main window (fixed: only active input controls it)
+	--========================
 	local draggingMain = false
 	local activeMainInput = nil
 	local mainDragStart = nil
@@ -466,78 +478,81 @@ function XuilanLib:CreateWindow(settings)
 		end
 	end)
 
-	-- ===== Window object =====
+	--========================
+	-- Window object + theme targets
+	--========================
 	local Window = {}
 	Window.Sections = {}
 	Window._sectionButtons = {}
 	Window._selectedIndex = nil
 
-	-- Theme targets (everything recolors from here)
 	local ThemeTargets = {
-		MainFrame = mainFrame,
-		InnerFrame = innerFrame,
+		Main = mainFrame,
+		Inner = innerFrame,
+		Title = title,
+		Desc = desc,
 		SectionButtons = {},
-		Rows = {},           -- { ContentFrame=, Type=..., Extra=... }
-		Header = { Title=title, Desc=desc },
+		Rows = {}, -- entries: {Type=..., Content=..., Label=..., Icon=..., ...}
 	}
 
 	local function ApplyTheme(theme)
 		currentTheme = theme
 
-		-- main/inner
 		mainFrame.BackgroundColor3 = theme.Main
 		mainFrame.BackgroundTransparency = MAIN_T
 
 		innerFrame.BackgroundColor3 = theme.Inner
 		innerFrame.BackgroundTransparency = INNER_T
 
-		-- header colors (keep fonts from settings)
+		-- header colors only
 		title.TextColor3 = theme.Title
 		desc.TextColor3 = theme.Desc
 
-		-- section buttons selected highlight uses Inner style (your rule)
+		-- section button text color
 		for _, b in ipairs(ThemeTargets.SectionButtons) do
-			-- only update their text color; background handled by selection logic
 			b.TextColor3 = theme.Title
 		end
 
 		-- rows recolor
 		for _, r in ipairs(ThemeTargets.Rows) do
-			if r.ContentFrame and r.ContentFrame.Parent then
-				r.ContentFrame.BackgroundColor3 = theme.Row
-				r.ContentFrame.BackgroundTransparency = ROW_BG_T
+			if r.Content and r.Content.Parent then
+				r.Content.BackgroundColor3 = theme.Row
+				r.Content.BackgroundTransparency = ROW_BG_T
 			end
-
-			-- per type adjustments
+			if r.Label and r.Label.Parent then
+				r.Label.TextColor3 = theme.Text
+			end
+			if r.LabelMuted and r.LabelMuted.Parent then
+				r.LabelMuted.TextColor3 = theme.Muted
+			end
 			if r.Type == "Toggle" then
-				if r.Pill then
-					-- pill color depends on state (stored)
-					if r.State and r.State.Value == true then
+				if r.Pill and r.Pill.Parent then
+					if r.StateBox and r.StateBox.Value == true then
 						r.Pill.BackgroundColor3 = theme.Accent
 					else
 						r.Pill.BackgroundColor3 = theme.PillOff
 					end
 				end
 			elseif r.Type == "Slider" then
-				if r.Track then r.Track.BackgroundColor3 = theme.PillOff end
-				if r.Fill then r.Fill.BackgroundColor3 = theme.Fill end
-				if r.ValueBox then r.ValueBox.BackgroundColor3 = theme.ValueBox end
+				if r.Track and r.Track.Parent then r.Track.BackgroundColor3 = theme.PillOff end
+				if r.Fill and r.Fill.Parent then r.Fill.BackgroundColor3 = theme.Fill end
+				if r.ValueBox and r.ValueBox.Parent then r.ValueBox.BackgroundColor3 = theme.ValueBox end
 			elseif r.Type == "Dropdown" then
-				if r.SelectBtn then r.SelectBtn.BackgroundColor3 = theme.ValueBox end
+				if r.SelectBtn and r.SelectBtn.Parent then r.SelectBtn.BackgroundColor3 = theme.ValueBox end
 			elseif r.Type == "TextBox" then
-				if r.InputBox then r.InputBox.BackgroundColor3 = theme.ValueBox end
+				if r.InputBox and r.InputBox.Parent then r.InputBox.BackgroundColor3 = theme.ValueBox end
 			elseif r.Type == "HeadText" then
-				if r.LeftLine then r.LeftLine.BackgroundColor3 = theme.Lines end
-				if r.RightLine then r.RightLine.BackgroundColor3 = theme.Lines end
+				if r.LeftLine and r.LeftLine.Parent then r.LeftLine.BackgroundColor3 = theme.Lines end
+				if r.RightLine and r.RightLine.Parent then r.RightLine.BackgroundColor3 = theme.Lines end
 			end
-
-			-- common labels
-			if r.Label then r.Label.TextColor3 = theme.Text end
-			if r.LabelMuted then r.LabelMuted.TextColor3 = theme.Muted end
 		end
 	end
 
-	-- selection style for sections: highlight uses Inner theme style
+	function Window:SetTheme(themeName)
+		local th = getThemeByName(themeName)
+		ApplyTheme(th)
+	end
+
 	local function applySelectionStyle(btn, isSelected)
 		btn.BackgroundColor3 = currentTheme.Inner
 		if isSelected then
@@ -551,24 +566,27 @@ function XuilanLib:CreateWindow(settings)
 		closeDropdownMenu()
 		ThemeTargets.Rows = {}
 		for _, ch in ipairs(contentScroll:GetChildren()) do
-			if ch:IsA("GuiObject") and ch ~= bottomSpacer and not ch:IsA("UIPadding") and not ch:IsA("UIListLayout") then
+			if ch:IsA("GuiObject") and ch ~= bottomSpacer and (not ch:IsA("UIPadding")) and (not ch:IsA("UIListLayout")) then
 				ch:Destroy()
 			end
 		end
 	end
 
-	-- Slider: lock one active drag
+	-- slider: lock single active drag
 	local ACTIVE_SLIDER_ROW = nil
 
-	-- ===== Renderers =====
-
+	--========================
+	-- Element Renderers
+	--========================
 	local function renderToggle(section, opt)
-		local rowColor = currentTheme.Row
 		local row = rowBase(contentScroll)
 		row.Name = "ToggleRow"
 		local content = nil
 		local scaleObj = nil
-		content, scaleObj = makeRowContent(row, rowColor)
+		content, scaleObj = makeRowContent(row)
+
+		content.BackgroundColor3 = currentTheme.Row
+		content.BackgroundTransparency = ROW_BG_T
 
 		local label = Instance.new("TextLabel")
 		label.BackgroundTransparency = 1
@@ -642,14 +660,39 @@ function XuilanLib:CreateWindow(settings)
 			end
 		end)
 
-		table.insert(ThemeTargets.Rows, { Type="Toggle", ContentFrame=content, Label=label, Pill=pill, State=stateBox })
+		table.insert(ThemeTargets.Rows, { Type="Toggle", Content=content, Label=label, Pill=pill, StateBox=stateBox })
 	end
 
 	local function renderButton(section, opt)
-		local rowColor = currentTheme.Row
 		local row = rowBase(contentScroll)
-		row.Name = "ActionButtonRow"
-		local content, scaleObj = makeRowContent(row, rowColor)
+		row.Name = "ButtonRow"
+		local content, scaleObj = makeRowContent(row)
+
+		content.BackgroundColor3 = currentTheme.Row
+		content.BackgroundTransparency = ROW_BG_T
+
+		local INNER_PAD = 10
+		local iconId = asAsset(opt.Icon or opt.Image or opt.AssetId)
+
+		local icon = nil
+		local iconW = 0
+		local iconGap = 0
+
+		if iconId then
+			icon = Instance.new("ImageLabel")
+			icon.Name = "Icon"
+			icon.BackgroundTransparency = 1
+			icon.BorderSizePixel = 0
+			icon.Image = iconId
+			icon.ScaleType = Enum.ScaleType.Fit
+			icon.AnchorPoint = Vector2.new(1, 0.5)
+			icon.Position = UDim2.new(1, -INNER_PAD, 0.5, 0)
+			icon.Size = UDim2.new(0, 18, 0, 18)
+			icon.ZIndex = 1013
+			icon.Parent = content
+			iconW = 18
+			iconGap = 8
+		end
 
 		local label = Instance.new("TextLabel")
 		label.BackgroundTransparency = 1
@@ -660,8 +703,8 @@ function XuilanLib:CreateWindow(settings)
 		label.TextSize = safeTextSize(opt.TextSize, DEFAULT_TEXT_SIZE)
 		label.TextXAlignment = Enum.TextXAlignment.Left
 		label.TextYAlignment = Enum.TextYAlignment.Center
-		label.Position = UDim2.new(0, 10, 0, 0)
-		label.Size = UDim2.new(1, -20, 1, 0)
+		label.Position = UDim2.new(0, INNER_PAD, 0, 0)
+		label.Size = UDim2.new(1, -(INNER_PAD + INNER_PAD + iconW + iconGap), 1, 0)
 		label.ZIndex = 1012
 		label.Parent = content
 
@@ -672,7 +715,7 @@ function XuilanLib:CreateWindow(settings)
 			end
 		end)
 
-		table.insert(ThemeTargets.Rows, { Type="Button", ContentFrame=content, Label=label })
+		table.insert(ThemeTargets.Rows, { Type="Button", Content=content, Label=label, Icon=icon })
 	end
 
 	local function renderSlider(section, opt)
@@ -692,11 +735,12 @@ function XuilanLib:CreateWindow(settings)
 
 		local value = snap(tonumber(opt.Default) or minValue)
 
-		local rowColor = currentTheme.Row
 		local row = rowBase(contentScroll)
 		row.Name = "SliderRow"
-		local content = nil
-		content = select(1, makeRowContent(row, rowColor))
+		local content = select(1, makeRowContent(row))
+
+		content.BackgroundColor3 = currentTheme.Row
+		content.BackgroundTransparency = ROW_BG_T
 
 		local INNER_PAD = 10
 		local LABEL_W = 62
@@ -757,8 +801,6 @@ function XuilanLib:CreateWindow(settings)
 		track.BackgroundColor3 = currentTheme.PillOff
 		track.BackgroundTransparency = 0
 		track.AnchorPoint = Vector2.new(0, 0.5)
-		track.Position = UDim2.new(0, 0, 0.5, 0) -- layout will set
-		track.Size = UDim2.new(0, 10, 0, trackH) -- layout will set
 		track.ZIndex = 1012
 		track.Parent = content
 
@@ -795,19 +837,19 @@ function XuilanLib:CreateWindow(settings)
 		knobCorner.CornerRadius = UDim.new(1, 0)
 		knobCorner.Parent = knob
 
-		-- Track layout: shorten by 1/3, cutting from LEFT (right edge fixed)
+		-- Track layout: shorten by 1/3, cut from LEFT, keep right edge fixed
 		local function layoutTrack()
-			local contentW = content.AbsoluteSize.X
-			if contentW <= 0 then return end
+			local cw = content.AbsoluteSize.X
+			if cw <= 0 then return end
 
-			local rightEdge = contentW - (INNER_PAD + valueBoxW + GAP_TRACK_TO_VALUE) -- where track RIGHT edge should be
-			local leftBase = INNER_PAD + LABEL_W + GAP_LABEL_TRACK -- old left start
+			local rightEdge = cw - (INNER_PAD + valueBoxW + GAP_TRACK_TO_VALUE)
+			local leftBase = INNER_PAD + LABEL_W + GAP_LABEL_TRACK
 			local fullW = rightEdge - leftBase
 			if fullW < 20 then fullW = 20 end
 
 			local newW = math.floor(fullW * (2/3) + 0.5)
 			local cut = fullW - newW
-			local newLeft = leftBase + cut -- cut from left, keep right edge
+			local newLeft = leftBase + cut
 
 			track.Position = UDim2.new(0, newLeft, 0.5, 0)
 			track.Size = UDim2.new(0, newW, 0, trackH)
@@ -842,8 +884,7 @@ function XuilanLib:CreateWindow(settings)
 			local left = track.AbsolutePosition.X
 			local w = track.AbsoluteSize.X
 			if w <= 1 then return end
-			local a = (screenX - left) / w
-			setFromAlpha(a, fire)
+			setFromAlpha((screenX - left) / w, fire)
 		end
 
 		task.defer(function()
@@ -858,9 +899,7 @@ function XuilanLib:CreateWindow(settings)
 		local activeInput = nil
 
 		local function beginDrag(input)
-			if ACTIVE_SLIDER_ROW ~= nil and ACTIVE_SLIDER_ROW ~= row then
-				return
-			end
+			if ACTIVE_SLIDER_ROW ~= nil and ACTIVE_SLIDER_ROW ~= row then return end
 			ACTIVE_SLIDER_ROW = row
 			dragging = true
 			activeInput = input
@@ -871,9 +910,7 @@ function XuilanLib:CreateWindow(settings)
 					if activeInput == input then
 						dragging = false
 						activeInput = nil
-						if ACTIVE_SLIDER_ROW == row then
-							ACTIVE_SLIDER_ROW = nil
-						end
+						if ACTIVE_SLIDER_ROW == row then ACTIVE_SLIDER_ROW = nil end
 					end
 				end
 			end)
@@ -917,7 +954,7 @@ function XuilanLib:CreateWindow(settings)
 			setFromAlpha(a, false)
 		end)
 
-		table.insert(ThemeTargets.Rows, { Type="Slider", ContentFrame=content, Label=label, Track=track, Fill=fill, ValueBox=valueBox })
+		table.insert(ThemeTargets.Rows, { Type="Slider", Content=content, Label=label, Track=track, Fill=fill, ValueBox=valueBox })
 	end
 
 	local function renderDropdown(section, opt)
@@ -927,10 +964,12 @@ function XuilanLib:CreateWindow(settings)
 		local defaultValue = opt.Default
 		if defaultValue == nil then defaultValue = options[1] end
 
-		local rowColor = currentTheme.Row
 		local row = rowBase(contentScroll)
 		row.Name = "DropdownRow"
-		local content = select(1, makeRowContent(row, rowColor))
+		local content = select(1, makeRowContent(row))
+
+		content.BackgroundColor3 = currentTheme.Row
+		content.BackgroundTransparency = ROW_BG_T
 
 		local INNER_PAD = 10
 		local GAP_TO_MENU = 5
@@ -945,7 +984,7 @@ function XuilanLib:CreateWindow(settings)
 		label.TextXAlignment = Enum.TextXAlignment.Left
 		label.TextYAlignment = Enum.TextYAlignment.Center
 		label.Position = UDim2.new(0, INNER_PAD, 0, 0)
-		label.Size = UDim2.new(1, -(INNER_PAD + 10 + 90), 1, 0)
+		label.Size = UDim2.new(1, -(INNER_PAD + 10 + 110), 1, 0)
 		label.ZIndex = 1012
 		label.Parent = content
 
@@ -960,7 +999,7 @@ function XuilanLib:CreateWindow(settings)
 		selectBtn.Text = tostring(defaultValue)
 		selectBtn.AnchorPoint = Vector2.new(1, 0.5)
 		selectBtn.Position = UDim2.new(1, -INNER_PAD, 0.5, 0)
-		selectBtn.Size = UDim2.new(0, 90, 0, 22)
+		selectBtn.Size = UDim2.new(0, 110, 0, 22)
 		selectBtn.ZIndex = 1013
 		selectBtn.Parent = content
 
@@ -971,11 +1010,12 @@ function XuilanLib:CreateWindow(settings)
 		local function openMenu()
 			closeDropdownMenu()
 
+			-- menu container
 			local menu = Instance.new("Frame")
 			menu.Name = "DropdownMenu"
 			menu.BorderSizePixel = 0
 			menu.BackgroundColor3 = currentTheme.ValueBox
-			menu.BackgroundTransparency = 0.3
+			menu.BackgroundTransparency = 0.3 -- полупрозрачный фон
 			menu.ZIndex = 5000
 			menu.Parent = screenGui
 			openDropdownMenu = menu
@@ -984,18 +1024,51 @@ function XuilanLib:CreateWindow(settings)
 			menuCorner.CornerRadius = UDim.new(0, 8)
 			menuCorner.Parent = menu
 
-			local menuList = Instance.new("UIListLayout")
-			menuList.FillDirection = Enum.FillDirection.Vertical
-			menuList.SortOrder = Enum.SortOrder.LayoutOrder
-			menuList.Padding = UDim.new(0, 4)
-			menuList.Parent = menu
-
 			local mpad = Instance.new("UIPadding")
 			mpad.PaddingTop = UDim.new(0, 6)
 			mpad.PaddingBottom = UDim.new(0, 6)
 			mpad.PaddingLeft = UDim.new(0, 6)
 			mpad.PaddingRight = UDim.new(0, 6)
 			mpad.Parent = menu
+
+			-- IMPORTANT: scroll after 6 items, no scrollbar
+			local maxVisible = 6
+			local itemH = 22
+			local itemGap = 4
+			local viewCount = math.min(#options, maxVisible)
+			local viewH = (viewCount * itemH) + ((viewCount - 1) * itemGap)
+
+			local listHost
+			if #options > maxVisible then
+				local scroll = Instance.new("ScrollingFrame")
+				scroll.Name = "OptionsScroll"
+				scroll.BackgroundTransparency = 1
+				scroll.BorderSizePixel = 0
+				scroll.ScrollBarThickness = 0
+				scroll.ScrollingDirection = Enum.ScrollingDirection.Y
+				scroll.ElasticBehavior = Enum.ElasticBehavior.WhenScrollable
+				scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+				scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+				scroll.Size = UDim2.new(1, 0, 0, viewH)
+				scroll.ZIndex = 5001
+				scroll.Parent = menu
+				listHost = scroll
+			else
+				local frame = Instance.new("Frame")
+				frame.Name = "OptionsFrame"
+				frame.BackgroundTransparency = 1
+				frame.BorderSizePixel = 0
+				frame.Size = UDim2.new(1, 0, 0, viewH)
+				frame.ZIndex = 5001
+				frame.Parent = menu
+				listHost = frame
+			end
+
+			local menuList = Instance.new("UIListLayout")
+			menuList.FillDirection = Enum.FillDirection.Vertical
+			menuList.SortOrder = Enum.SortOrder.LayoutOrder
+			menuList.Padding = UDim.new(0, itemGap)
+			menuList.Parent = listHost
 
 			for i, optVal in ipairs(options) do
 				local b = Instance.new("TextButton")
@@ -1007,10 +1080,10 @@ function XuilanLib:CreateWindow(settings)
 				b.Font = Enum.Font.SourceSansBold
 				b.TextSize = safeTextSize(opt.ValueTextSize, 14)
 				b.Text = tostring(optVal)
-				b.Size = UDim2.new(0, 140, 0, 22)
-				b.ZIndex = 5001
+				b.Size = UDim2.new(1, 0, 0, itemH)
+				b.ZIndex = 5002
 				b.LayoutOrder = i
-				b.Parent = menu
+				b.Parent = listHost
 
 				local bc = Instance.new("UICorner")
 				bc.CornerRadius = UDim.new(0, 6)
@@ -1025,9 +1098,12 @@ function XuilanLib:CreateWindow(settings)
 				end)
 			end
 
+			-- set menu size/pos
 			local absPos = selectBtn.AbsolutePosition
 			local absSize = selectBtn.AbsoluteSize
-			menu.Size = UDim2.new(0, 160, 0, 6 + (#options * 22) + ((#options - 1) * 4) + 6)
+
+			local menuW = 180
+			menu.Size = UDim2.new(0, menuW, 0, 6 + viewH + 6)
 			menu.Position = UDim2.new(0, absPos.X + absSize.X + GAP_TO_MENU, 0, absPos.Y)
 		end
 
@@ -1035,14 +1111,16 @@ function XuilanLib:CreateWindow(settings)
 			if openDropdownMenu then closeDropdownMenu() else openMenu() end
 		end)
 
-		table.insert(ThemeTargets.Rows, { Type="Dropdown", ContentFrame=content, Label=label, SelectBtn=selectBtn })
+		table.insert(ThemeTargets.Rows, { Type="Dropdown", Content=content, Label=label, SelectBtn=selectBtn })
 	end
 
 	local function renderTextBox(section, opt)
-		local rowColor = currentTheme.Row
 		local row = rowBase(contentScroll)
 		row.Name = "TextBoxRow"
-		local content = select(1, makeRowContent(row, rowColor))
+		local content = select(1, makeRowContent(row))
+
+		content.BackgroundColor3 = currentTheme.Row
+		content.BackgroundTransparency = ROW_BG_T
 
 		local INNER_PAD = 10
 		local BOX_W = 111
@@ -1115,7 +1193,7 @@ function XuilanLib:CreateWindow(settings)
 			end
 		end)
 
-		table.insert(ThemeTargets.Rows, { Type="TextBox", ContentFrame=content, Label=label, InputBox=box })
+		table.insert(ThemeTargets.Rows, { Type="TextBox", Content=content, Label=label, InputBox=box })
 	end
 
 	local function renderLabel(section, opt)
@@ -1123,10 +1201,12 @@ function XuilanLib:CreateWindow(settings)
 		if lines < 1 then lines = 1 end
 
 		local rowHeight = 16 + (lines * 14)
-		local rowColor = currentTheme.Row
 		local row = rowBase(contentScroll, rowHeight)
 		row.Name = "LabelRow"
-		local content = select(1, makeRowContent(row, rowColor))
+		local content = select(1, makeRowContent(row))
+
+		content.BackgroundColor3 = currentTheme.Row
+		content.BackgroundTransparency = ROW_BG_T
 
 		local text = Instance.new("TextLabel")
 		text.BackgroundTransparency = 1
@@ -1143,7 +1223,7 @@ function XuilanLib:CreateWindow(settings)
 		text.ZIndex = 1012
 		text.Parent = content
 
-		table.insert(ThemeTargets.Rows, { Type="Label", ContentFrame=content, LabelMuted=text })
+		table.insert(ThemeTargets.Rows, { Type="Label", Content=content, LabelMuted=text })
 	end
 
 	local function renderHeadText(section, opt)
@@ -1212,10 +1292,9 @@ function XuilanLib:CreateWindow(settings)
 		task.defer(layoutLines)
 		container:GetPropertyChangedSignal("AbsoluteSize"):Connect(layoutLines)
 
-		table.insert(ThemeTargets.Rows, { Type="HeadText", ContentFrame=nil, Label=head, LeftLine=leftLine, RightLine=rightLine })
+		table.insert(ThemeTargets.Rows, { Type="HeadText", Content=nil, Label=head, LeftLine=leftLine, RightLine=rightLine })
 	end
 
-	-- dispatch
 	local function renderSection(section)
 		clearContentKeepLayout()
 		for _, el in ipairs(section._elements) do
@@ -1235,7 +1314,6 @@ function XuilanLib:CreateWindow(settings)
 				renderHeadText(section, el.Opt)
 			end
 		end
-		-- apply theme after render (ensures recolor correctness)
 		ApplyTheme(currentTheme)
 	end
 
@@ -1253,12 +1331,12 @@ function XuilanLib:CreateWindow(settings)
 		applySelectionStyle(btn, true)
 
 		local section = Window.Sections[idx]
-		if section then
-			renderSection(section)
-		end
+		if section then renderSection(section) end
 	end
 
-	-- AddSection (strict fields)
+	--========================
+	-- API: AddSection + element adders
+	--========================
 	function Window:AddSection(opt)
 		opt = opt or {}
 		local section = {}
@@ -1277,6 +1355,7 @@ function XuilanLib:CreateWindow(settings)
 
 		table.insert(Window.Sections, section)
 
+		-- left panel button
 		local idx = #Window.Sections
 		local b = Instance.new("TextButton")
 		b.Name = "SectionBtn_" .. tostring(idx)
@@ -1302,7 +1381,9 @@ function XuilanLib:CreateWindow(settings)
 		c.Parent = b
 
 		applySelectionStyle(b, false)
-		b.Activated:Connect(function() setSelected(idx) end)
+		b.Activated:Connect(function()
+			setSelected(idx)
+		end)
 
 		Window._sectionButtons[idx] = b
 		table.insert(ThemeTargets.SectionButtons, b)
@@ -1314,7 +1395,9 @@ function XuilanLib:CreateWindow(settings)
 		return section
 	end
 
-	-- ===== Layout =====
+	--========================
+	-- Layout
+	--========================
 	local function updateLayout()
 		local mainTopAbs = mainFrame.AbsolutePosition.Y
 		local innerTopAbs = innerFrame.AbsolutePosition.Y
@@ -1376,12 +1459,12 @@ function XuilanLib:CreateWindow(settings)
 	innerFrame:GetPropertyChangedSignal("AbsolutePosition"):Connect(updateLayout)
 	innerFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateLayout)
 
-	-- Apply default theme initially
+	-- apply initial theme
 	ApplyTheme(currentTheme)
 
-	-- =========================
-	-- Theme section (optional)
-	-- =========================
+	--========================
+	-- Theme section (optional) - 15 themes
+	--========================
 	if settings.ThemeSection == true then
 		local themeSection = Window:AddSection({
 			Name = "Themes",
@@ -1389,18 +1472,17 @@ function XuilanLib:CreateWindow(settings)
 			Color = "#ffffff"
 		})
 
-		local themeNames = {}
+		local names = {}
 		for _, t in ipairs(Themes) do
-			table.insert(themeNames, t.Name)
+			table.insert(names, t.Name)
 		end
 
 		themeSection:AddDropdown({
 			Name = "Theme",
-			Options = themeNames,
-			Default = currentTheme.Name,
+			Options = names,
+			Default = Themes[1].Name,
 			Callback = function(name)
-				local th = getThemeByName(name)
-				ApplyTheme(th)
+				Window:SetTheme(name)
 			end
 		})
 	end
