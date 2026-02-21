@@ -1,7 +1,12 @@
--- XuilanLib.lua (executor-ready)
+-- XuilanLib.lua (FULL) — executor-ready
 -- loadstring(game:HttpGet(URL))()
--- Full rewrite: themes(15) + ThemeSection + Dropdown scroll (>6) + Button Icon (fingerprint) + keeps same look.
--- No junk at end.
+-- Features:
+--  • Same visual layout as your current UI (main 400x280, inner 260x235 @ (10,10))
+--  • Left sections list + inner elements list (both scroll with NO scrollbars)
+--  • Dropdown menu FIX: if Options > 6 -> scrollable list (NO scrollbar)
+--  • Themes: EXACTLY 15 themes + optional ThemeSection (Theme dropdown)
+--  • Buttons: fingerprint icon ALWAYS on the right (NO setting) — size x1.5
+--  • No junk characters at end.
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -121,7 +126,7 @@ function XuilanLib:CreateWindow(settings)
 	local oldGui = playerGui:FindFirstChild("CustomRectangleGui")
 	if oldGui then oldGui:Destroy() end
 
-	-- Look constants (keep same)
+	-- Look constants
 	local MAIN_SIZE = UDim2.new(0, 400, 0, 280)
 	local MAIN_T = 0.12
 	local MAIN_CORNER = 14
@@ -154,6 +159,7 @@ function XuilanLib:CreateWindow(settings)
 	local ASSET_PUG = asAsset(settings.Icon) or "rbxassetid://136007050760089"
 	local ASSET_CLOSE = "rbxassetid://87923978940368"
 	local ASSET_MINUS = "rbxassetid://92670491990824"
+	local ASSET_FINGERPRINT = "rbxassetid://134643086907470"
 
 	-- header text settings
 	local windowTitle = settings.Title or "XuilanLib"
@@ -443,7 +449,7 @@ function XuilanLib:CreateWindow(settings)
 	end
 
 	--========================
-	-- Drag main window (fixed: only active input controls it)
+	-- Drag main window (fixed)
 	--========================
 	local draggingMain = false
 	local activeMainInput = nil
@@ -492,7 +498,7 @@ function XuilanLib:CreateWindow(settings)
 		Title = title,
 		Desc = desc,
 		SectionButtons = {},
-		Rows = {}, -- entries: {Type=..., Content=..., Label=..., Icon=..., ...}
+		Rows = {},
 	}
 
 	local function ApplyTheme(theme)
@@ -504,16 +510,13 @@ function XuilanLib:CreateWindow(settings)
 		innerFrame.BackgroundColor3 = theme.Inner
 		innerFrame.BackgroundTransparency = INNER_T
 
-		-- header colors only
 		title.TextColor3 = theme.Title
 		desc.TextColor3 = theme.Desc
 
-		-- section button text color
 		for _, b in ipairs(ThemeTargets.SectionButtons) do
 			b.TextColor3 = theme.Title
 		end
 
-		-- rows recolor
 		for _, r in ipairs(ThemeTargets.Rows) do
 			if r.Content and r.Content.Parent then
 				r.Content.BackgroundColor3 = theme.Row
@@ -663,6 +666,7 @@ function XuilanLib:CreateWindow(settings)
 		table.insert(ThemeTargets.Rows, { Type="Toggle", Content=content, Label=label, Pill=pill, StateBox=stateBox })
 	end
 
+	-- BUTTON: fingerprint ALWAYS, size x1.5
 	local function renderButton(section, opt)
 		local row = rowBase(contentScroll)
 		row.Name = "ButtonRow"
@@ -672,27 +676,20 @@ function XuilanLib:CreateWindow(settings)
 		content.BackgroundTransparency = ROW_BG_T
 
 		local INNER_PAD = 10
-		local iconId = asAsset(opt.Icon or opt.Image or opt.AssetId)
+		local ICON_SIZE = 27 -- 18 * 1.5
+		local ICON_GAP = 8
 
-		local icon = nil
-		local iconW = 0
-		local iconGap = 0
-
-		if iconId then
-			icon = Instance.new("ImageLabel")
-			icon.Name = "Icon"
-			icon.BackgroundTransparency = 1
-			icon.BorderSizePixel = 0
-			icon.Image = iconId
-			icon.ScaleType = Enum.ScaleType.Fit
-			icon.AnchorPoint = Vector2.new(1, 0.5)
-			icon.Position = UDim2.new(1, -INNER_PAD, 0.5, 0)
-			icon.Size = UDim2.new(0, 18, 0, 18)
-			icon.ZIndex = 1013
-			icon.Parent = content
-			iconW = 18
-			iconGap = 8
-		end
+		local icon = Instance.new("ImageLabel")
+		icon.Name = "FingerprintIcon"
+		icon.BackgroundTransparency = 1
+		icon.BorderSizePixel = 0
+		icon.Image = ASSET_FINGERPRINT
+		icon.ScaleType = Enum.ScaleType.Fit
+		icon.AnchorPoint = Vector2.new(1, 0.5)
+		icon.Position = UDim2.new(1, -INNER_PAD, 0.5, 0)
+		icon.Size = UDim2.new(0, ICON_SIZE, 0, ICON_SIZE)
+		icon.ZIndex = 1013
+		icon.Parent = content
 
 		local label = Instance.new("TextLabel")
 		label.BackgroundTransparency = 1
@@ -704,7 +701,7 @@ function XuilanLib:CreateWindow(settings)
 		label.TextXAlignment = Enum.TextXAlignment.Left
 		label.TextYAlignment = Enum.TextYAlignment.Center
 		label.Position = UDim2.new(0, INNER_PAD, 0, 0)
-		label.Size = UDim2.new(1, -(INNER_PAD + INNER_PAD + iconW + iconGap), 1, 0)
+		label.Size = UDim2.new(1, -(INNER_PAD + INNER_PAD + ICON_SIZE + ICON_GAP), 1, 0)
 		label.ZIndex = 1012
 		label.Parent = content
 
@@ -1010,12 +1007,11 @@ function XuilanLib:CreateWindow(settings)
 		local function openMenu()
 			closeDropdownMenu()
 
-			-- menu container
 			local menu = Instance.new("Frame")
 			menu.Name = "DropdownMenu"
 			menu.BorderSizePixel = 0
 			menu.BackgroundColor3 = currentTheme.ValueBox
-			menu.BackgroundTransparency = 0.3 -- полупрозрачный фон
+			menu.BackgroundTransparency = 0.3
 			menu.ZIndex = 5000
 			menu.Parent = screenGui
 			openDropdownMenu = menu
@@ -1031,7 +1027,6 @@ function XuilanLib:CreateWindow(settings)
 			mpad.PaddingRight = UDim.new(0, 6)
 			mpad.Parent = menu
 
-			-- IMPORTANT: scroll after 6 items, no scrollbar
 			local maxVisible = 6
 			local itemH = 22
 			local itemGap = 4
@@ -1098,7 +1093,6 @@ function XuilanLib:CreateWindow(settings)
 				end)
 			end
 
-			-- set menu size/pos
 			local absPos = selectBtn.AbsolutePosition
 			local absSize = selectBtn.AbsoluteSize
 
@@ -1355,7 +1349,6 @@ function XuilanLib:CreateWindow(settings)
 
 		table.insert(Window.Sections, section)
 
-		-- left panel button
 		local idx = #Window.Sections
 		local b = Instance.new("TextButton")
 		b.Name = "SectionBtn_" .. tostring(idx)
@@ -1459,11 +1452,10 @@ function XuilanLib:CreateWindow(settings)
 	innerFrame:GetPropertyChangedSignal("AbsolutePosition"):Connect(updateLayout)
 	innerFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateLayout)
 
-	-- apply initial theme
 	ApplyTheme(currentTheme)
 
 	--========================
-	-- Theme section (optional) - 15 themes
+	-- Theme section (optional) — EXACTLY 15 themes
 	--========================
 	if settings.ThemeSection == true then
 		local themeSection = Window:AddSection({
