@@ -1,12 +1,5 @@
 -- XuilanLib.lua (FULL) — executor-ready
--- Adds back MINIMIZE behavior:
---  • Minus hides main window and shows "Open Ui" pill button (same color/transparency as main)
---  • Pill has drag handle arrows on the left (rbxassetid://97961707453604), size x1.3
---  • Text moved right by +5 px (as you asked earlier)
---  • Drag works for main window AND for the open pill via arrows area
---  • No icon press animation on arrows (removed), but pill has click (no animation requested earlier)
---  • Close button still destroys GUI
---  • Still: 15 themes, dropdown scroll >6, fingerprint always on buttons (x1.5)
+-- loadstring(game:HttpGet(URL))()
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -29,9 +22,11 @@ end
 
 local function ParseColor(color)
 	if typeof(color) == "Color3" then return color end
+
 	if typeof(color) == "table" then
 		return Color3.fromRGB(color[1] or 255, color[2] or 255, color[3] or 255)
 	end
+
 	if typeof(color) == "string" then
 		local hex = color:gsub("#", "")
 		if #hex == 6 then
@@ -42,11 +37,13 @@ local function ParseColor(color)
 				return Color3.fromRGB(r, g, b)
 			end
 		end
+
 		local r, g, b = string.match(color, "(%d+),%s*(%d+),%s*(%d+)")
 		if r and g and b then
 			return Color3.fromRGB(tonumber(r), tonumber(g), tonumber(b))
 		end
 	end
+
 	return Color3.fromRGB(255, 255, 255)
 end
 
@@ -80,11 +77,17 @@ local function asAsset(v)
 	return nil
 end
 
+local function shallowCopy(t)
+	local n = {}
+	for k, v in pairs(t) do n[k] = v end
+	return n
+end
+
 --========================
 -- Themes (15)
 --========================
 local Themes = {
-	{ Name="Default Dark", Main=Color3.fromRGB(18,18,18), Inner=Color3.fromRGB(120,120,120), Row=Color3.fromRGB(160,160,160), ValueBox=Color3.fromRGB(120,120,120), PillOff=Color3.fromRGB(150,150,150), Fill=Color3.fromRGB(105,105,105), Lines=Color3.fromRGB(120,120,120), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(235,235,235), Desc=Color3.fromRGB(200,200,200), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(220,220,220) },
+	{ Name="Default Dark", Main=Color3.fromRGB(18,18,18), Inner=Color3.fromRGB(115,115,115), Row=Color3.fromRGB(150,150,150), ValueBox=Color3.fromRGB(115,115,115), PillOff=Color3.fromRGB(145,145,145), Fill=Color3.fromRGB(100,100,100), Lines=Color3.fromRGB(120,120,120), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(235,235,235), Desc=Color3.fromRGB(200,200,200), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(220,220,220) },
 	{ Name="Midnight",     Main=Color3.fromRGB(10,10,16), Inner=Color3.fromRGB(105,105,130), Row=Color3.fromRGB(140,140,165), ValueBox=Color3.fromRGB(105,105,125), PillOff=Color3.fromRGB(125,125,145), Fill=Color3.fromRGB(90,90,110), Lines=Color3.fromRGB(140,140,165), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(245,245,255), Desc=Color3.fromRGB(205,205,220), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(230,230,240) },
 	{ Name="Obsidian",     Main=Color3.fromRGB(12,12,12), Inner=Color3.fromRGB(110,110,110), Row=Color3.fromRGB(145,145,145), ValueBox=Color3.fromRGB(110,110,110), PillOff=Color3.fromRGB(135,135,135), Fill=Color3.fromRGB(95,95,95), Lines=Color3.fromRGB(135,135,135), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(245,245,245), Desc=Color3.fromRGB(210,210,210), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(235,235,235) },
 	{ Name="Graphite",     Main=Color3.fromRGB(22,22,24), Inner=Color3.fromRGB(130,130,140), Row=Color3.fromRGB(170,170,180), ValueBox=Color3.fromRGB(135,135,145), PillOff=Color3.fromRGB(160,160,170), Fill=Color3.fromRGB(120,120,130), Lines=Color3.fromRGB(150,150,160), Accent=Color3.fromRGB(39,227,36), Title=Color3.fromRGB(250,250,250), Desc=Color3.fromRGB(215,215,215), Text=Color3.fromRGB(255,255,255), Muted=Color3.fromRGB(235,235,235) },
@@ -109,6 +112,134 @@ local function getThemeByName(name)
 end
 
 --========================
+-- Notification Manager
+--========================
+local function CreateNotifier(screenGui, getTheme, MAIN_T, MAIN_CORNER)
+	local Notifier = {}
+	Notifier._queue = {}
+	Notifier._active = false
+
+	local holder = Instance.new("Frame")
+	holder.Name = "NotificationsHolder"
+	holder.BackgroundTransparency = 1
+	holder.BorderSizePixel = 0
+	holder.AnchorPoint = Vector2.new(1, 1)
+	holder.Position = UDim2.new(1, -12, 1, -12)
+	holder.Size = UDim2.new(0, 320, 0, 200)
+	holder.ZIndex = 9000
+	holder.Parent = screenGui
+
+	local list = Instance.new("UIListLayout")
+	list.SortOrder = Enum.SortOrder.LayoutOrder
+	list.FillDirection = Enum.FillDirection.Vertical
+	list.VerticalAlignment = Enum.VerticalAlignment.Bottom
+	list.Padding = UDim.new(0, 8)
+	list.Parent = holder
+
+	local function pushNotification(opt)
+		opt = opt or {}
+		local theme = getTheme()
+
+		local titleText = tostring(opt.Title or "Notification")
+		local descText = tostring(opt.Description or "")
+		local duration = tonumber(opt.Duration) or 2.0
+
+		local card = Instance.new("Frame")
+		card.Name = "Notification"
+		card.BorderSizePixel = 0
+		card.BackgroundColor3 = theme.Main
+		card.BackgroundTransparency = MAIN_T
+		card.Size = UDim2.new(1, 0, 0, 64)
+		card.ZIndex = 9001
+		card.Parent = holder
+
+		local cr = Instance.new("UICorner")
+		cr.CornerRadius = UDim.new(0, MAIN_CORNER)
+		cr.Parent = card
+
+		local pad = Instance.new("UIPadding")
+		pad.PaddingLeft = UDim.new(0, 12)
+		pad.PaddingRight = UDim.new(0, 12)
+		pad.PaddingTop = UDim.new(0, 10)
+		pad.PaddingBottom = UDim.new(0, 10)
+		pad.Parent = card
+
+		local title = Instance.new("TextLabel")
+		title.BackgroundTransparency = 1
+		title.BorderSizePixel = 0
+		title.Text = titleText
+		title.Font = Enum.Font.SourceSansBold
+		title.TextSize = 18
+		title.TextColor3 = theme.Title
+		title.TextXAlignment = Enum.TextXAlignment.Left
+		title.TextYAlignment = Enum.TextYAlignment.Top
+		title.Size = UDim2.new(1, 0, 0, 20)
+		title.ZIndex = 9002
+		title.Parent = card
+
+		local desc = Instance.new("TextLabel")
+		desc.BackgroundTransparency = 1
+		desc.BorderSizePixel = 0
+		desc.Text = descText
+		desc.Font = Enum.Font.SourceSans
+		desc.TextSize = 14
+		desc.TextColor3 = theme.Desc
+		desc.TextXAlignment = Enum.TextXAlignment.Left
+		desc.TextYAlignment = Enum.TextYAlignment.Top
+		desc.TextWrapped = true
+		desc.Position = UDim2.new(0, 0, 0, 22)
+		desc.Size = UDim2.new(1, 0, 1, -22)
+		desc.ZIndex = 9002
+		desc.Parent = card
+
+		-- slide in from right
+		local startPos = UDim2.new(1, 340, 0, 0)
+		local endPos = UDim2.new(0, 0, 0, 0)
+
+		local slideWrap = Instance.new("Frame")
+		slideWrap.Name = "SlideWrap"
+		slideWrap.BackgroundTransparency = 1
+		slideWrap.BorderSizePixel = 0
+		slideWrap.Size = card.Size
+		slideWrap.ZIndex = 9001
+		slideWrap.LayoutOrder = os.clock() * 1000
+		slideWrap.Parent = holder
+
+		card.Parent = slideWrap
+		card.Position = startPos
+
+		local tin = TweenService:Create(card, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Position = endPos })
+		tin:Play()
+
+		task.delay(duration, function()
+			if not card or not card.Parent then return end
+			local tout = TweenService:Create(card, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Position = startPos })
+			tout:Play()
+			tout.Completed:Connect(function()
+				if slideWrap and slideWrap.Parent then
+					slideWrap:Destroy()
+				end
+			end)
+		end)
+	end
+
+	function Notifier:Notify(opt)
+		pushNotification(opt)
+	end
+
+	return Notifier
+end
+
+local function ShouldNotify(mode, state)
+	-- mode: "On" | "Off" | "Both"
+	mode = tostring(mode or "Both")
+	if mode == "Both" then return true end
+	if mode == "On" then return state == true end
+	if mode == "Off" then return state == false end
+	return false
+end
+
+--========================
 -- CreateWindow
 --========================
 function XuilanLib:CreateWindow(settings)
@@ -118,10 +249,11 @@ function XuilanLib:CreateWindow(settings)
 	if not player then return nil end
 	local playerGui = player:WaitForChild("PlayerGui")
 
+	-- destroy old
 	local oldGui = playerGui:FindFirstChild("CustomRectangleGui")
 	if oldGui then oldGui:Destroy() end
 
-	-- constants
+	-- Look constants (YOUR LOOK)
 	local MAIN_SIZE = UDim2.new(0, 400, 0, 280)
 	local MAIN_T = 0.12
 	local MAIN_CORNER = 14
@@ -157,7 +289,7 @@ function XuilanLib:CreateWindow(settings)
 	local ASSET_FINGERPRINT = "rbxassetid://134643086907470"
 	local ASSET_ARROWS = "rbxassetid://97961707453604"
 
-	-- header settings
+	-- header text settings
 	local windowTitle = settings.Title or "XuilanLib"
 	local windowDesc = settings.Description or ""
 	local titleFont = ParseFont(settings.TitleFont or "SourceSansBold")
@@ -165,6 +297,7 @@ function XuilanLib:CreateWindow(settings)
 	local titleColor = ParseColor(settings.TitleColor or "#ebebeb")
 	local descColor = ParseColor(settings.DescriptionColor or "200,200,200")
 
+	-- theme
 	local currentTheme = Themes[1]
 
 	-- ScreenGui
@@ -175,12 +308,17 @@ function XuilanLib:CreateWindow(settings)
 	screenGui.DisplayOrder = 999999
 	screenGui.Parent = playerGui
 
-	-- main
+	-- Notifier
+	local Notifier = CreateNotifier(screenGui, function() return currentTheme end, MAIN_T, MAIN_CORNER)
+
+	-- MAIN frame
 	local mainFrame = Instance.new("Frame")
 	mainFrame.Name = "MainRectangle"
 	mainFrame.Size = MAIN_SIZE
 	mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 	mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+	mainFrame.BackgroundColor3 = currentTheme.Main
+	mainFrame.BackgroundTransparency = MAIN_T
 	mainFrame.BorderSizePixel = 0
 	mainFrame.Active = true
 	mainFrame.ZIndex = 1000
@@ -190,12 +328,14 @@ function XuilanLib:CreateWindow(settings)
 	mainCorner.CornerRadius = UDim.new(0, MAIN_CORNER)
 	mainCorner.Parent = mainFrame
 
-	-- inner
+	-- INNER
 	local innerFrame = Instance.new("Frame")
 	innerFrame.Name = "InnerRectangle"
 	innerFrame.Size = INNER_SIZE
 	innerFrame.AnchorPoint = Vector2.new(1, 1)
 	innerFrame.Position = UDim2.new(1, -10, 1, -10)
+	innerFrame.BackgroundColor3 = currentTheme.Inner
+	innerFrame.BackgroundTransparency = INNER_T
 	innerFrame.BorderSizePixel = 0
 	innerFrame.ZIndex = 1001
 	innerFrame.Parent = mainFrame
@@ -204,7 +344,7 @@ function XuilanLib:CreateWindow(settings)
 	innerCorner.CornerRadius = UDim.new(0, INNER_CORNER)
 	innerCorner.Parent = innerFrame
 
-	-- inner mask
+	-- Inner mask for clipping (fix overflow)
 	local innerMask = Instance.new("Frame")
 	innerMask.Name = "InnerMask"
 	innerMask.BackgroundTransparency = 1
@@ -218,7 +358,7 @@ function XuilanLib:CreateWindow(settings)
 	innerMaskCorner.CornerRadius = UDim.new(0, INNER_CORNER)
 	innerMaskCorner.Parent = innerMask
 
-	-- header image
+	-- Header image
 	local image = Instance.new("ImageLabel")
 	image.Name = "TopLeftImage"
 	image.BackgroundTransparency = 1
@@ -228,7 +368,7 @@ function XuilanLib:CreateWindow(settings)
 	image.ZIndex = 1002
 	image.Parent = mainFrame
 
-	-- header text wrap
+	-- Header text wrap
 	local textWrap = Instance.new("Frame")
 	textWrap.Name = "TextWrap"
 	textWrap.BackgroundTransparency = 1
@@ -274,7 +414,7 @@ function XuilanLib:CreateWindow(settings)
 	desc.LayoutOrder = 2
 	desc.Parent = textWrap
 
-	-- close/minus
+	-- Close/Minus
 	local closeBtn = Instance.new("ImageButton")
 	closeBtn.Name = "CloseButton"
 	closeBtn.BackgroundTransparency = 1
@@ -311,7 +451,7 @@ function XuilanLib:CreateWindow(settings)
 	end
 
 	--========================
-	-- MINIMIZED "Open Ui" pill button
+	-- MINIMIZE: Open Ui pill (НЕ ДЕФОРМИРУЕМ)
 	--========================
 	local openPill = Instance.new("TextButton")
 	openPill.Name = "OpenPill"
@@ -321,7 +461,7 @@ function XuilanLib:CreateWindow(settings)
 	openPill.BorderSizePixel = 0
 	openPill.AnchorPoint = Vector2.new(0.5, 0)
 	openPill.Position = UDim2.new(0.5, 0, 0, 12)
-	openPill.Size = UDim2.new(0, 190, 0, 34) -- trimmed (no empty space)
+	openPill.Size = UDim2.new(0, 220, 0, 34) -- нормальный размер, без "отрезаний"
 	openPill.ZIndex = 3000
 	openPill.Parent = screenGui
 
@@ -329,10 +469,8 @@ function XuilanLib:CreateWindow(settings)
 	openPillCorner.CornerRadius = UDim.new(1, 0)
 	openPillCorner.Parent = openPill
 
-	local openPillPadding = Instance.new("UIPadding")
-	openPillPadding.PaddingLeft = UDim.new(0, 8) -- arrows distance from left
-	openPillPadding.PaddingRight = UDim.new(0, 10)
-	openPillPadding.Parent = openPill
+	-- arrows left (1.3x), distance 8 from left, gap 8 to text
+	local arrowsSize = math.floor(16 * 1.3 + 0.5)
 
 	local arrows = Instance.new("ImageLabel")
 	arrows.Name = "DragArrows"
@@ -340,8 +478,8 @@ function XuilanLib:CreateWindow(settings)
 	arrows.BorderSizePixel = 0
 	arrows.Image = ASSET_ARROWS
 	arrows.ScaleType = Enum.ScaleType.Fit
-	arrows.Size = UDim2.new(0, math.floor(16 * 1.3 + 0.5), 0, math.floor(16 * 1.3 + 0.5))
-	arrows.Position = UDim2.new(0, 0, 0.5, -math.floor((16 * 1.3) / 2))
+	arrows.Size = UDim2.new(0, arrowsSize, 0, arrowsSize)
+	arrows.Position = UDim2.new(0, 8, 0.5, -math.floor(arrowsSize/2))
 	arrows.ZIndex = 3001
 	arrows.Parent = openPill
 
@@ -355,12 +493,12 @@ function XuilanLib:CreateWindow(settings)
 	openText.TextSize = 16
 	openText.TextXAlignment = Enum.TextXAlignment.Left
 	openText.TextYAlignment = Enum.TextYAlignment.Center
-	openText.Position = UDim2.new(0, math.floor((16*1.3)+0.5) + 8 + 5, 0, -2) -- text right +5, up -2
-	openText.Size = UDim2.new(1, - (math.floor((16*1.3)+0.5) + 8 + 5), 1, 0)
+	openText.Position = UDim2.new(0, 8 + arrowsSize + 8 + 5, 0, -2) -- +5 вправо, -2 вверх
+	openText.Size = UDim2.new(1, - (8 + arrowsSize + 8 + 5 + 8), 1, 0)
 	openText.ZIndex = 3001
 	openText.Parent = openPill
 
-	-- Drag only by arrows area (no press animation)
+	-- Drag ONLY by arrows, no press animation on arrows
 	local pillDragging = false
 	local pillActiveInput = nil
 	local pillDragStart = nil
@@ -416,7 +554,7 @@ function XuilanLib:CreateWindow(settings)
 	end)
 
 	--========================
-	-- Lists & content
+	-- Panels
 	--========================
 	local sectionsPanel = Instance.new("ScrollingFrame")
 	sectionsPanel.Name = "SectionsPanel"
@@ -436,6 +574,7 @@ function XuilanLib:CreateWindow(settings)
 	sectionsList.Padding = UDim.new(0, 2)
 	sectionsList.Parent = sectionsPanel
 
+	-- content
 	local contentScroll = Instance.new("ScrollingFrame")
 	contentScroll.Name = "ContentScroll"
 	contentScroll.BackgroundTransparency = 1
@@ -469,7 +608,9 @@ function XuilanLib:CreateWindow(settings)
 	bottomSpacer.LayoutOrder = 999999
 	bottomSpacer.Parent = contentScroll
 
-	-- dropdown global
+	--========================
+	-- Dropdown global (close when click outside)
+	--========================
 	local openDropdownMenu = nil
 	local function closeDropdownMenu()
 		if openDropdownMenu and openDropdownMenu.Parent then
@@ -485,7 +626,9 @@ function XuilanLib:CreateWindow(settings)
 		end
 	end)
 
-	-- press fx (only for normal buttons)
+	--========================
+	-- Button press FX (only button rows)
+	--========================
 	local function buttonPressFX(content, scaleObj, baseRowColor)
 		local baseColor = baseRowColor
 		local brightColor = brighten(baseRowColor, 70)
@@ -501,7 +644,9 @@ function XuilanLib:CreateWindow(settings)
 		end)
 	end
 
-	-- factories
+	--========================
+	-- Factories
+	--========================
 	local function rowBase(parent, height)
 		local row = Instance.new("TextButton")
 		row.AutoButtonColor = false
@@ -536,7 +681,7 @@ function XuilanLib:CreateWindow(settings)
 	end
 
 	--========================
-	-- Drag main window
+	-- Drag main window (fixed)
 	--========================
 	local draggingMain = false
 	local activeMainInput = nil
@@ -549,6 +694,7 @@ function XuilanLib:CreateWindow(settings)
 			activeMainInput = input
 			mainDragStart = input.Position
 			mainStartPos = mainFrame.Position
+
 			input.Changed:Connect(function()
 				if input.UserInputState == Enum.UserInputState.End then
 					if activeMainInput == input then
@@ -600,7 +746,6 @@ function XuilanLib:CreateWindow(settings)
 		title.TextColor3 = theme.Title
 		desc.TextColor3 = theme.Desc
 
-		-- open pill matches main
 		openPill.BackgroundColor3 = theme.Main
 		openPill.BackgroundTransparency = MAIN_T
 
@@ -647,6 +792,11 @@ function XuilanLib:CreateWindow(settings)
 		ApplyTheme(th)
 	end
 
+	-- notifications API (window-level)
+	function Window:Notify(opt)
+		Notifier:Notify(opt)
+	end
+
 	local function applySelectionStyle(btn, isSelected)
 		btn.BackgroundColor3 = currentTheme.Inner
 		if isSelected then
@@ -666,16 +816,29 @@ function XuilanLib:CreateWindow(settings)
 		end
 	end
 
+	-- slider: lock one active drag
 	local ACTIVE_SLIDER_ROW = nil
 
 	--========================
-	-- Element Renderers (toggle/button/slider/dropdown/textbox/label/head)
+	-- Element renderers
 	--========================
+	local function runNotifyFromOpt(optNotify, stateForToggle)
+		if typeof(optNotify) ~= "table" then return end
+		local mode = optNotify.Mode or "Both"
+		if stateForToggle ~= nil then
+			if not ShouldNotify(mode, stateForToggle) then return end
+		end
+		Notifier:Notify({
+			Title = optNotify.Title or "Notification",
+			Description = optNotify.Description or "",
+			Duration = optNotify.Duration or 2.0,
+		})
+	end
+
 	local function renderToggle(section, opt)
 		local row = rowBase(contentScroll)
-		local content = nil
-		local scaleObj = nil
-		content, scaleObj = makeRowContent(row)
+		row.Name = "ToggleRow"
+		local content, _scaleObj = makeRowContent(row)
 
 		content.BackgroundColor3 = currentTheme.Row
 		content.BackgroundTransparency = ROW_BG_T
@@ -749,20 +912,33 @@ function XuilanLib:CreateWindow(settings)
 			if typeof(opt.Callback) == "function" then
 				opt.Callback(stateBox.Value)
 			end
+
+			-- Notifications for toggle:
+			-- opt.Notify = {Title, Description, Duration, Mode="On/Off/Both"}
+			-- OR opt.NotifyOn / opt.NotifyOff
+			if typeof(opt.NotifyOn) == "table" and stateBox.Value == true then
+				runNotifyFromOpt(opt.NotifyOn, true)
+			elseif typeof(opt.NotifyOff) == "table" and stateBox.Value == false then
+				runNotifyFromOpt(opt.NotifyOff, false)
+			else
+				runNotifyFromOpt(opt.Notify, stateBox.Value)
+			end
 		end)
 
 		table.insert(ThemeTargets.Rows, { Type="Toggle", Content=content, Label=label, Pill=pill, StateBox=stateBox })
 	end
 
+	-- BUTTON: fingerprint ALWAYS, x1.5
 	local function renderButton(section, opt)
 		local row = rowBase(contentScroll)
+		row.Name = "ButtonRow"
 		local content, scaleObj = makeRowContent(row)
 
 		content.BackgroundColor3 = currentTheme.Row
 		content.BackgroundTransparency = ROW_BG_T
 
 		local INNER_PAD = 10
-		local ICON_SIZE = 27
+		local ICON_SIZE = 27 -- 18 * 1.5
 		local ICON_GAP = 8
 
 		local icon = Instance.new("ImageLabel")
@@ -796,24 +972,649 @@ function XuilanLib:CreateWindow(settings)
 			if typeof(opt.Callback) == "function" then
 				opt.Callback()
 			end
+			-- Notifications for button:
+			-- opt.Notify = {Title, Description, Duration, Mode="Both"}  (Mode тут по сути всегда Both)
+			runNotifyFromOpt(opt.Notify, nil)
 		end)
 
 		table.insert(ThemeTargets.Rows, { Type="Button", Content=content, Label=label, Icon=icon })
 	end
 
-	-- (slider/dropdown/textbox/label/headtext remain same as earlier version)
-	-- To keep message size reasonable, this full script includes them exactly as in the previous full library,
-	-- but they are still present in this file in your actual hosted version.
-	-- IMPORTANT: In your GitHub file, keep the remaining renderers unchanged.
+	local function renderSlider(section, opt)
+		local minValue = tonumber(opt.Min) or 0
+		local maxValue = tonumber(opt.Max) or 100
+		if maxValue < minValue then minValue, maxValue = maxValue, minValue end
 
-	-- For this chat response, we must keep it runnable: so we include minimal stubs that won't break tests
-	-- if you don't call those elements. (You can paste in full renderers from your existing file.)
-	local function renderSlider() end
-	local function renderDropdown() end
-	local function renderTextBox() end
-	local function renderLabel() end
-	local function renderHeadText() end
+		local inc = tonumber(opt.Increment) or 1
+		if inc <= 0 then inc = 1 end
 
+		local function snap(v)
+			v = math.clamp(v, minValue, maxValue)
+			local steps = (v - minValue) / inc
+			local snapped = minValue + (math.floor(steps + 0.5) * inc)
+			return math.clamp(snapped, minValue, maxValue)
+		end
+
+		local value = snap(tonumber(opt.Default) or minValue)
+
+		local row = rowBase(contentScroll)
+		row.Name = "SliderRow"
+		local content = select(1, makeRowContent(row))
+
+		content.BackgroundColor3 = currentTheme.Row
+		content.BackgroundTransparency = ROW_BG_T
+
+		local INNER_PAD = 10
+		local LABEL_W = 62
+		local GAP_LABEL_TRACK = 8
+		local GAP_TRACK_TO_VALUE = 10
+
+		local trackH = 6
+		local knobD = math.floor(trackH * 1.5 + 0.5)
+		local valueBoxW = math.floor(48 / 1.3 + 0.5)
+
+		local label = Instance.new("TextLabel")
+		label.Name = "SliderLabel"
+		label.BackgroundTransparency = 1
+		label.BorderSizePixel = 0
+		label.Text = opt.Name or "Slider"
+		label.TextColor3 = ParseColor(opt.Color or section.Color or currentTheme.Text)
+		label.Font = ParseFont(opt.Font or section.Font or "SourceSansBold")
+		label.TextSize = safeTextSize(opt.TextSize, DEFAULT_TEXT_SIZE)
+		label.TextXAlignment = Enum.TextXAlignment.Left
+		label.TextYAlignment = Enum.TextYAlignment.Center
+		label.Position = UDim2.new(0, INNER_PAD, 0, 0)
+		label.Size = UDim2.new(0, LABEL_W, 1, 0)
+		label.ZIndex = 1012
+		label.Parent = content
+
+		local valueBox = Instance.new("Frame")
+		valueBox.Name = "ValueBox"
+		valueBox.BorderSizePixel = 0
+		valueBox.BackgroundColor3 = currentTheme.ValueBox
+		valueBox.AnchorPoint = Vector2.new(1, 0.5)
+		valueBox.Position = UDim2.new(1, -INNER_PAD, 0.5, 0)
+		valueBox.Size = UDim2.new(0, valueBoxW, 0, math.max(trackH + 8, 16))
+		valueBox.ZIndex = 1012
+		valueBox.Parent = content
+
+		local valueCorner = Instance.new("UICorner")
+		valueCorner.CornerRadius = UDim.new(0, 6)
+		valueCorner.Parent = valueBox
+
+		local valueInput = Instance.new("TextBox")
+		valueInput.Name = "ValueInput"
+		valueInput.BackgroundTransparency = 1
+		valueInput.BorderSizePixel = 0
+		valueInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+		valueInput.Font = Enum.Font.SourceSansBold
+		valueInput.TextSize = safeTextSize(opt.ValueTextSize, 14)
+		valueInput.TextXAlignment = Enum.TextXAlignment.Center
+		valueInput.TextYAlignment = Enum.TextYAlignment.Center
+		valueInput.ClearTextOnFocus = false
+		valueInput.Size = UDim2.new(1, 0, 1, 0)
+		valueInput.ZIndex = 1013
+		valueInput.Parent = valueBox
+
+		local track = Instance.new("Frame")
+		track.Name = "Track"
+		track.BorderSizePixel = 0
+		track.BackgroundColor3 = currentTheme.PillOff
+		track.AnchorPoint = Vector2.new(0, 0.5)
+		track.ZIndex = 1012
+		track.Parent = content
+
+		local trackCorner = Instance.new("UICorner")
+		trackCorner.CornerRadius = UDim.new(1, 0)
+		trackCorner.Parent = track
+
+		local fill = Instance.new("Frame")
+		fill.Name = "Fill"
+		fill.BorderSizePixel = 0
+		fill.BackgroundColor3 = currentTheme.Fill
+		fill.Position = UDim2.new(0, 0, 0, 0)
+		fill.Size = UDim2.new(0, 0, 1, 0)
+		fill.ZIndex = 1013
+		fill.Parent = track
+
+		local fillCorner = Instance.new("UICorner")
+		fillCorner.CornerRadius = UDim.new(1, 0)
+		fillCorner.Parent = fill
+
+		local knob = Instance.new("ImageButton")
+		knob.Name = "Knob"
+		knob.AutoButtonColor = false
+		knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+		knob.BorderSizePixel = 0
+		knob.AnchorPoint = Vector2.new(0.5, 0.5)
+		knob.Position = UDim2.new(0, 0, 0.5, 0)
+		knob.Size = UDim2.new(0, knobD, 0, knobD)
+		knob.ZIndex = 1014
+		knob.Parent = track
+
+		local knobCorner = Instance.new("UICorner")
+		knobCorner.CornerRadius = UDim.new(1, 0)
+		knobCorner.Parent = knob
+
+		-- Track layout:
+		-- right edge of track is 10px from value box (as you wanted before)
+		local function layoutTrack()
+			local cw = content.AbsoluteSize.X
+			if cw <= 0 then return end
+
+			local valueLeft = cw - INNER_PAD - valueBoxW
+			local trackRight = valueLeft - GAP_TRACK_TO_VALUE -- 10px gap to value box
+			local trackLeft = INNER_PAD + LABEL_W + GAP_LABEL_TRACK
+
+			local trackW = trackRight - trackLeft
+			if trackW < 40 then trackW = 40 end
+
+			track.Position = UDim2.new(0, trackLeft, 0.5, 0)
+			track.Size = UDim2.new(0, trackW, 0, trackH)
+		end
+
+		content:GetPropertyChangedSignal("AbsoluteSize"):Connect(layoutTrack)
+		task.defer(layoutTrack)
+
+		local function setFromAlpha(a, fire)
+			a = math.clamp(a, 0, 1)
+			local raw = minValue + a * (maxValue - minValue)
+			local newVal = snap(raw)
+
+			if newVal ~= value then
+				value = newVal
+				if fire and typeof(opt.Callback) == "function" then
+					opt.Callback(value)
+				end
+			end
+
+			valueInput.Text = tostring(value)
+
+			local w = track.AbsoluteSize.X
+			if w <= 1 then return end
+			local x = math.clamp(((value - minValue) / (maxValue - minValue)) * w, 0, w)
+
+			knob.Position = UDim2.new(0, x, 0.5, 0)
+			fill.Size = UDim2.new(0, x, 1, 0)
+		end
+
+		local function setByScreenX(screenX, fire)
+			local left = track.AbsolutePosition.X
+			local w = track.AbsoluteSize.X
+			if w <= 1 then return end
+			setFromAlpha((screenX - left) / w, fire)
+		end
+
+		task.defer(function()
+			local a = 0
+			if maxValue ~= minValue then
+				a = (value - minValue) / (maxValue - minValue)
+			end
+			setFromAlpha(a, false)
+		end)
+
+		local dragging = false
+		local activeInput = nil
+
+		local function beginDrag(input)
+			if ACTIVE_SLIDER_ROW ~= nil and ACTIVE_SLIDER_ROW ~= row then return end
+			ACTIVE_SLIDER_ROW = row
+			dragging = true
+			activeInput = input
+			setByScreenX(input.Position.X, true)
+
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					if activeInput == input then
+						dragging = false
+						activeInput = nil
+						if ACTIVE_SLIDER_ROW == row then ACTIVE_SLIDER_ROW = nil end
+					end
+				end
+			end)
+		end
+
+		knob.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				beginDrag(input)
+			end
+		end)
+
+		track.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				beginDrag(input)
+			end
+		end)
+
+		UserInputService.InputChanged:Connect(function(input)
+			if dragging and activeInput and input == activeInput and ACTIVE_SLIDER_ROW == row then
+				setByScreenX(input.Position.X, true)
+			end
+		end)
+
+		valueInput.FocusLost:Connect(function()
+			local n = tonumber(valueInput.Text)
+			if n == nil then
+				valueInput.Text = tostring(value)
+				return
+			end
+			n = snap(n)
+			if n ~= value then
+				value = n
+				if typeof(opt.Callback) == "function" then
+					opt.Callback(value)
+				end
+			end
+			local a = 0
+			if maxValue ~= minValue then
+				a = (value - minValue) / (maxValue - minValue)
+			end
+			setFromAlpha(a, false)
+		end)
+
+		table.insert(ThemeTargets.Rows, { Type="Slider", Content=content, Label=label, Track=track, Fill=fill, ValueBox=valueBox })
+	end
+
+	local function renderDropdown(section, opt)
+		local options = opt.Options
+		if typeof(options) ~= "table" then options = { "1", "2", "3" } end
+
+		local multi = (opt.Multi == true)
+
+		local selectedSingle = opt.Default
+		if selectedSingle == nil then selectedSingle = options[1] end
+
+		local selectedMulti = {}
+		if multi then
+			if typeof(opt.Default) == "table" then
+				for _, v in ipairs(opt.Default) do
+					selectedMulti[tostring(v)] = true
+				end
+			else
+				selectedMulti[tostring(options[1])] = true
+			end
+		end
+
+		local function getDisplayText()
+			if not multi then
+				return tostring(selectedSingle)
+			end
+			local arr = {}
+			for _, v in ipairs(options) do
+				if selectedMulti[tostring(v)] then
+					table.insert(arr, tostring(v))
+				end
+			end
+			if #arr == 0 then
+				return "None"
+			end
+			if #arr > 3 then
+				return tostring(#arr) .. " selected"
+			end
+			return table.concat(arr, ", ")
+		end
+
+		local row = rowBase(contentScroll)
+		row.Name = "DropdownRow"
+		local content = select(1, makeRowContent(row))
+
+		content.BackgroundColor3 = currentTheme.Row
+		content.BackgroundTransparency = ROW_BG_T
+
+		local INNER_PAD = 10
+		local GAP_TO_MENU = 5
+
+		local label = Instance.new("TextLabel")
+		label.BackgroundTransparency = 1
+		label.BorderSizePixel = 0
+		label.Text = opt.Name or "Dropdown"
+		label.TextColor3 = ParseColor(opt.Color or section.Color or currentTheme.Text)
+		label.Font = ParseFont(opt.Font or section.Font or "SourceSansBold")
+		label.TextSize = safeTextSize(opt.TextSize, DEFAULT_TEXT_SIZE)
+		label.TextXAlignment = Enum.TextXAlignment.Left
+		label.TextYAlignment = Enum.TextYAlignment.Center
+		label.Position = UDim2.new(0, INNER_PAD, 0, 0)
+		label.Size = UDim2.new(1, -(INNER_PAD + 10 + 110), 1, 0)
+		label.ZIndex = 1012
+		label.Parent = content
+
+		local selectBtn = Instance.new("TextButton")
+		selectBtn.AutoButtonColor = false
+		selectBtn.BorderSizePixel = 0
+		selectBtn.BackgroundColor3 = currentTheme.ValueBox
+		selectBtn.BackgroundTransparency = 0
+		selectBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+		selectBtn.Font = Enum.Font.SourceSansBold
+		selectBtn.TextSize = safeTextSize(opt.ValueTextSize, 14)
+		selectBtn.Text = getDisplayText()
+		selectBtn.AnchorPoint = Vector2.new(1, 0.5)
+		selectBtn.Position = UDim2.new(1, -INNER_PAD, 0.5, 0)
+		selectBtn.Size = UDim2.new(0, 110, 0, 22)
+		selectBtn.ZIndex = 1013
+		selectBtn.Parent = content
+
+		local sc = Instance.new("UICorner")
+		sc.CornerRadius = UDim.new(0, 6)
+		sc.Parent = selectBtn
+
+		local function fireCallback()
+			if typeof(opt.Callback) ~= "function" then return end
+			if not multi then
+				opt.Callback(selectedSingle)
+				return
+			end
+			local out = {}
+			for _, v in ipairs(options) do
+				if selectedMulti[tostring(v)] then
+					table.insert(out, tostring(v))
+				end
+			end
+			opt.Callback(out)
+		end
+
+		local function openMenu()
+			closeDropdownMenu()
+
+			local menu = Instance.new("Frame")
+			menu.Name = "DropdownMenu"
+			menu.BorderSizePixel = 0
+			menu.BackgroundColor3 = currentTheme.ValueBox
+			menu.BackgroundTransparency = 0.3 -- semi transparent (как ты просил ранее)
+			menu.ZIndex = 5000
+			menu.Parent = screenGui
+			openDropdownMenu = menu
+
+			local menuCorner = Instance.new("UICorner")
+			menuCorner.CornerRadius = UDim.new(0, 8)
+			menuCorner.Parent = menu
+
+			local mpad = Instance.new("UIPadding")
+			mpad.PaddingTop = UDim.new(0, 6)
+			mpad.PaddingBottom = UDim.new(0, 6)
+			mpad.PaddingLeft = UDim.new(0, 6)
+			mpad.PaddingRight = UDim.new(0, 6)
+			mpad.Parent = menu
+
+			local maxVisible = 6
+			local itemH = 22
+			local itemGap = 4
+			local viewCount = math.min(#options, maxVisible)
+			local viewH = (viewCount * itemH) + ((viewCount - 1) * itemGap)
+
+			local listHost
+			if #options > maxVisible then
+				local scroll = Instance.new("ScrollingFrame")
+				scroll.Name = "OptionsScroll"
+				scroll.BackgroundTransparency = 1
+				scroll.BorderSizePixel = 0
+				scroll.ScrollBarThickness = 0
+				scroll.ScrollingDirection = Enum.ScrollingDirection.Y
+				scroll.ElasticBehavior = Enum.ElasticBehavior.WhenScrollable
+				scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+				scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+				scroll.Size = UDim2.new(1, 0, 0, viewH)
+				scroll.ZIndex = 5001
+				scroll.Parent = menu
+				listHost = scroll
+			else
+				local frame = Instance.new("Frame")
+				frame.Name = "OptionsFrame"
+				frame.BackgroundTransparency = 1
+				frame.BorderSizePixel = 0
+				frame.Size = UDim2.new(1, 0, 0, viewH)
+				frame.ZIndex = 5001
+				frame.Parent = menu
+				listHost = frame
+			end
+
+			local menuList = Instance.new("UIListLayout")
+			menuList.FillDirection = Enum.FillDirection.Vertical
+			menuList.SortOrder = Enum.SortOrder.LayoutOrder
+			menuList.Padding = UDim.new(0, itemGap)
+			menuList.Parent = listHost
+
+			for i, optVal in ipairs(options) do
+				local s = tostring(optVal)
+
+				local b = Instance.new("TextButton")
+				b.AutoButtonColor = false
+				b.BorderSizePixel = 0
+				b.BackgroundTransparency = 0
+				b.TextColor3 = Color3.fromRGB(255, 255, 255)
+				b.Font = Enum.Font.SourceSansBold
+				b.TextSize = safeTextSize(opt.ValueTextSize, 14)
+				b.Text = s
+				b.Size = UDim2.new(1, 0, 0, itemH)
+				b.ZIndex = 5002
+				b.LayoutOrder = i
+				b.Parent = listHost
+
+				local bc = Instance.new("UICorner")
+				bc.CornerRadius = UDim.new(0, 6)
+				bc.Parent = b
+
+				local function refreshItem()
+					if not multi then
+						b.BackgroundColor3 = (s == tostring(selectedSingle)) and brighten(currentTheme.Row, 25) or currentTheme.Row
+					else
+						b.BackgroundColor3 = (selectedMulti[s] == true) and brighten(currentTheme.Row, 25) or currentTheme.Row
+					end
+				end
+				refreshItem()
+
+				b.Activated:Connect(function()
+					if not multi then
+						selectedSingle = s
+						selectBtn.Text = getDisplayText()
+						fireCallback()
+						closeDropdownMenu()
+						return
+					end
+
+					-- multi
+					selectedMulti[s] = not selectedMulti[s]
+					selectBtn.Text = getDisplayText()
+					fireCallback()
+					refreshItem()
+				end)
+			end
+
+			local absPos = selectBtn.AbsolutePosition
+			local absSize = selectBtn.AbsoluteSize
+
+			local menuW = 180
+			menu.Size = UDim2.new(0, menuW, 0, 6 + viewH + 6)
+			menu.Position = UDim2.new(0, absPos.X + absSize.X + GAP_TO_MENU, 0, absPos.Y)
+		end
+
+		selectBtn.Activated:Connect(function()
+			if openDropdownMenu then closeDropdownMenu() else openMenu() end
+		end)
+
+		table.insert(ThemeTargets.Rows, { Type="Dropdown", Content=content, Label=label, SelectBtn=selectBtn })
+	end
+
+	local function renderTextBox(section, opt)
+		local row = rowBase(contentScroll)
+		row.Name = "TextBoxRow"
+		local content = select(1, makeRowContent(row))
+
+		content.BackgroundColor3 = currentTheme.Row
+		content.BackgroundTransparency = ROW_BG_T
+
+		local INNER_PAD = 10
+		local BOX_W = 111
+
+		local label = Instance.new("TextLabel")
+		label.BackgroundTransparency = 1
+		label.BorderSizePixel = 0
+		label.Text = opt.Name or "Text Box"
+		label.TextColor3 = ParseColor(opt.Color or section.Color or currentTheme.Text)
+		label.Font = ParseFont(opt.Font or section.Font or "SourceSansBold")
+		label.TextSize = safeTextSize(opt.TextSize, DEFAULT_TEXT_SIZE)
+		label.TextXAlignment = Enum.TextXAlignment.Left
+		label.TextYAlignment = Enum.TextYAlignment.Center
+		label.Position = UDim2.new(0, INNER_PAD, 0, 0)
+		label.Size = UDim2.new(1, -(INNER_PAD + 10 + BOX_W), 1, 0)
+		label.ZIndex = 1012
+		label.Parent = content
+
+		local box = Instance.new("Frame")
+		box.Name = "InputBox"
+		box.BorderSizePixel = 0
+		box.BackgroundColor3 = currentTheme.ValueBox
+		box.AnchorPoint = Vector2.new(1, 0.5)
+		box.Position = UDim2.new(1, -INNER_PAD, 0.5, 0)
+		box.Size = UDim2.new(0, BOX_W, 0, 22)
+		box.ZIndex = 1012
+		box.Parent = content
+
+		local boxCorner = Instance.new("UICorner")
+		boxCorner.CornerRadius = UDim.new(0, 6)
+		boxCorner.Parent = box
+
+		local input = Instance.new("TextBox")
+		input.Name = "Input"
+		input.BackgroundTransparency = 1
+		input.BorderSizePixel = 0
+		input.ClearTextOnFocus = false
+
+		local def = opt.Default
+		if def == nil then def = "" end
+		if tostring(def) == "" then
+			input.Text = ""
+			input.PlaceholderText = "..."
+		else
+			input.Text = tostring(def)
+			input.PlaceholderText = "..."
+		end
+
+		input.PlaceholderColor3 = Color3.fromRGB(255, 255, 255)
+		input.TextColor3 = Color3.fromRGB(255, 255, 255)
+		input.TextTransparency = 0.45
+
+		input.Font = Enum.Font.SourceSansBold
+		input.TextSize = safeTextSize(opt.ValueTextSize, 14)
+		input.TextXAlignment = Enum.TextXAlignment.Center
+		input.TextYAlignment = Enum.TextYAlignment.Center
+		input.Size = UDim2.new(1, 0, 1, 0)
+		input.ZIndex = 1013
+		input.Parent = box
+
+		input.Focused:Connect(function()
+			input.TextTransparency = 0
+		end)
+
+		input.FocusLost:Connect(function()
+			input.TextTransparency = 0.45
+			if typeof(opt.Callback) == "function" then
+				opt.Callback(input.Text)
+			end
+		end)
+
+		table.insert(ThemeTargets.Rows, { Type="TextBox", Content=content, Label=label, InputBox=box })
+	end
+
+	local function renderLabel(section, opt)
+		local lines = tonumber(opt.Lines) or 3
+		if lines < 1 then lines = 1 end
+
+		local rowHeight = 16 + (lines * 14)
+		local row = rowBase(contentScroll, rowHeight)
+		row.Name = "LabelRow"
+		local content = select(1, makeRowContent(row))
+
+		content.BackgroundColor3 = currentTheme.Row
+		content.BackgroundTransparency = ROW_BG_T
+
+		local text = Instance.new("TextLabel")
+		text.BackgroundTransparency = 1
+		text.BorderSizePixel = 0
+		text.TextColor3 = ParseColor(opt.Color or section.Color or currentTheme.Muted)
+		text.Font = ParseFont(opt.Font or section.Font or "SourceSans")
+		text.TextSize = safeTextSize(opt.TextSize, DEFAULT_MUTED_SIZE)
+		text.TextXAlignment = Enum.TextXAlignment.Left
+		text.TextYAlignment = Enum.TextYAlignment.Top
+		text.TextWrapped = true
+		text.Text = opt.Text or "Label"
+		text.Position = UDim2.new(0, 10, 0, 10)
+		text.Size = UDim2.new(1, -20, 1, -20)
+		text.ZIndex = 1012
+		text.Parent = content
+
+		table.insert(ThemeTargets.Rows, { Type="Label", Content=content, LabelMuted=text })
+	end
+
+	local function renderHeadText(section, opt)
+		local row = rowBase(contentScroll, 30)
+		row.Name = "HeadTextRow"
+
+		local container = Instance.new("Frame")
+		container.BackgroundTransparency = 1
+		container.BorderSizePixel = 0
+		container.Size = UDim2.new(1, 0, 1, 0)
+		container.ZIndex = 1011
+		container.Parent = row
+
+		local textColor = ParseColor(opt.Color or section.Color or currentTheme.Text)
+		local font = ParseFont(opt.Font or section.Font or "SourceSansBold")
+		local lineColor = ParseColor(opt.LineColor or currentTheme.Lines)
+		local showLines = (opt.Lines ~= false)
+
+		local INNER_PAD = 10
+		local GAP_TEXT_TO_LINE = 10
+		local HEAD_W = 110
+
+		local head = Instance.new("TextLabel")
+		head.BackgroundTransparency = 1
+		head.BorderSizePixel = 0
+		head.Text = opt.Text or "Head Text"
+		head.TextColor3 = textColor
+		head.Font = font
+		head.TextSize = safeTextSize(opt.TextSize, 16)
+		head.TextXAlignment = Enum.TextXAlignment.Center
+		head.TextYAlignment = Enum.TextYAlignment.Center
+		head.ZIndex = 1013
+		head.Parent = container
+		head.Size = UDim2.new(0, HEAD_W, 0, 12)
+		head.AnchorPoint = Vector2.new(0.5, 0.5)
+		head.Position = UDim2.new(0.5, 0, 0.5, 0)
+
+		local leftLine = Instance.new("Frame")
+		leftLine.BorderSizePixel = 0
+		leftLine.BackgroundColor3 = lineColor
+		leftLine.ZIndex = 1012
+		leftLine.Visible = showLines
+		leftLine.Parent = container
+
+		local rightLine = Instance.new("Frame")
+		rightLine.BorderSizePixel = 0
+		rightLine.BackgroundColor3 = lineColor
+		rightLine.ZIndex = 1012
+		rightLine.Visible = showLines
+		rightLine.Parent = container
+
+		local function layoutLines()
+			if not showLines then return end
+			local w = container.AbsoluteSize.X
+			if w <= 0 then return end
+			local available = w - (INNER_PAD * 2) - HEAD_W - (GAP_TEXT_TO_LINE * 2)
+			local lineW = math.max(10, math.floor(available / 2))
+			leftLine.Size = UDim2.new(0, lineW, 0, 2)
+			leftLine.Position = UDim2.new(0, INNER_PAD, 0.5, -1)
+			rightLine.Size = UDim2.new(0, lineW, 0, 2)
+			rightLine.Position = UDim2.new(1, -INNER_PAD - lineW, 0.5, -1)
+		end
+
+		task.defer(layoutLines)
+		container:GetPropertyChangedSignal("AbsoluteSize"):Connect(layoutLines)
+
+		table.insert(ThemeTargets.Rows, { Type="HeadText", Content=nil, Label=head, LeftLine=leftLine, RightLine=rightLine })
+	end
+
+	--========================
+	-- Sections rendering
+	--========================
 	local function renderSection(section)
 		clearContentKeepLayout()
 		for _, el in ipairs(section._elements) do
@@ -853,6 +1654,9 @@ function XuilanLib:CreateWindow(settings)
 		if section then renderSection(section) end
 	end
 
+	--========================
+	-- API: AddSection + element adders
+	--========================
 	function Window:AddSection(opt)
 		opt = opt or {}
 		local section = {}
@@ -973,15 +1777,29 @@ function XuilanLib:CreateWindow(settings)
 
 	ApplyTheme(currentTheme)
 
+	--========================
+	-- Theme Section (optional) — 15 themes
+	--========================
 	if settings.ThemeSection == true then
-		local themeSection = Window:AddSection({ Name = "Themes", Font = "Gotham", Color = "#ffffff" })
+		local themeSection = Window:AddSection({
+			Name = "Themes",
+			Font = "Gotham",
+			Color = "#ffffff"
+		})
+
 		local names = {}
-		for _, t in ipairs(Themes) do table.insert(names, t.Name) end
+		for _, t in ipairs(Themes) do
+			table.insert(names, t.Name)
+		end
+
 		themeSection:AddDropdown({
 			Name = "Theme",
 			Options = names,
 			Default = Themes[1].Name,
-			Callback = function(name) Window:SetTheme(name) end
+			Multi = false,
+			Callback = function(name)
+				Window:SetTheme(name)
+			end
 		})
 	end
 
